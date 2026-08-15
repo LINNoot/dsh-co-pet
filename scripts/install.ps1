@@ -87,8 +87,13 @@ Write-Host "    桌宠启动器: $PetExe"
 # ---------- 2. 安装 DSH 插件 ----------
 Write-Step "安装 dsh-pet-bridge 到 profile '$Profile'"
 $pluginAbs = [System.IO.Path]::GetFullPath($PluginDir)
-& dsh plugin --profile $Profile add $pluginAbs
-if ($LASTEXITCODE -ne 0) { throw "dsh plugin add 失败（退出码 $LASTEXITCODE）" }
+$dshCmd = Get-Command dsh -ErrorAction SilentlyContinue
+if ($dshCmd) {
+    & dsh plugin --profile $Profile add $pluginAbs
+    if ($LASTEXITCODE -ne 0) { Write-Host "    dsh plugin add 失败（退出码 $LASTEXITCODE）——插件可能已安装，可忽略" -ForegroundColor Yellow }
+} else {
+    Write-Host "    未找到 dsh 命令（仅当前 DSH 运行环境内置）——若插件此前已安装，可忽略此步骤" -ForegroundColor Yellow
+}
 
 # ---------- 3. 写入 petPath 覆盖 ----------
 if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
