@@ -31,7 +31,8 @@ export class PetBridgeState {
    * @param {() => number} [opts.now]
    * @param {(fn: () => void, ms: number) => () => void} [opts.schedule]
    * @param {(event: string, detail: string) => void} [opts.onEvent]
-   * @param {(text: string, status: string) => void} [opts.onAction]
+   * @param {(text: string, status: string, kind: "action" | "summary") => void} [opts.onAction]
+   *   kind: "action"=动作行（工具进度，不锁定）；"summary"=AI 总结（锁定显示）
    */
   constructor(opts = {}) {
     this.quietMs = opts.quietMs ?? 8000;
@@ -185,11 +186,21 @@ export class PetBridgeState {
       }
       case "step/start":
       case "assistant/chunk":
-      case "assistant/message":
       case "request/header": {
         // 模型推理/请求期间保持运行态（防止 mode 残留导致兜底误判）
         if (this.mode !== "waiting") {
           this.mode = "running";
+        }
+        break;
+      }
+      case "assistant/message": {
+        // 模型完整回复 → AI 总结（气泡第二行，kind=summary，锁定显示）
+        if (this.mode !== "waiting") {
+          this.mode = "running";
+        }
+        const summary = firstText(data.message?.content);
+        if (summary) {
+          this.onAction(clampDetail(summary, 20), "ok", "summary");
         }
         break;
       }
@@ -200,6 +211,8 @@ export class PetBridgeState {
           this._activity();
           this.mode = "running";
           this.onEvent("UserPromptSubmit", clampDetail(firstText(data.message?.content)));
+          // 新指令：重置 AI 总结锁定（原版 user_message 动作行清空语义）
+          this.onAction(" ", "ok", "action");
         }
         break;
       }
@@ -208,7 +221,7 @@ export class PetBridgeState {
         this.completed = false;
         this.mode = "running";
         this.onEvent("PreToolUse", `调用工具 ${data.name}`);
-        this.onAction(`调用 ${data.name}`, "ok");
+        this.onAction(`调用 ${data.name}`, "ok", "action");
         break;
       }
       case "tool/result": {
@@ -217,7 +230,7 @@ export class PetBridgeState {
         if (data.error) {
           this.mode = "running";
           this.onEvent("PostToolUse", `工具出错 ${data.error.code ?? data.error.name ?? ""}`.trim());
-          this.onAction(`工具出错：${data.error.code ?? data.error.name ?? ""}`, "error");
+          this.onAction(`工具出错：${data.error.code ?? data.error.name ?? ""}`, "error", "action");
           break;
         }
         const diffs = data.meta?.diffs;
@@ -227,12 +240,12 @@ export class PetBridgeState {
           const files = diffs.map((d) => d.path).filter(Boolean);
           const detail = files.length > 0 ? `已修改 ${files.length} 个文件` : "已应用代码变更";
           this.onEvent("patch_apply", detail);
-          this.onAction(detail, "ok");
+          this.onAction(detail, "ok", "action");
         } else {
           this.mode = "running";
           const name = data.message?.content?.[0]?.name ?? data.message?.name ?? "";
           this.onEvent("PostToolUse", name ? `工具 ${name} 完成` : "工具执行完成");
-          this.onAction(name ? `${name} 完成` : "工具执行完成", "ok");
+          this.onAction(name ? `${name} 完成` : "工具执行完成", "ok", "action");
         }
         break;
       }
@@ -267,7 +280,7 @@ export class PetBridgeState {
         this.completed = false;
         this.mode = "waiting";
         this.onEvent("PermissionRequest", clampDetail(data.toolName ?? "需要授权", 60));
-        this.onAction(`等待授权：${data.toolName ?? "工具"}`, "warn");
+        this.onAction(`等待授权：${data.toolName ?? "工具"}`, "warn", "action");
         break;
       }
       case "approval/decided": {
@@ -277,7 +290,7 @@ export class PetBridgeState {
           this.completed = false;
           this.mode = "running";
           this.onEvent("agent_message", "已授权，继续执行");
-          this.onAction("已授权，继续执行", "ok");
+          this.onAction("已授权，继续执行", "ok", "action");
         } else if (outcome === "rejected") {
           this.completed = false;
           this.mode = "idle";
@@ -307,7 +320,7 @@ export class PetBridgeState {
           this.completed = false;
           this.mode = "running";
           this.onEvent("agent_message", "目标已创建，开始执行");
-          this.onAction(clampDetail(goal?.objective, 40), "ok");
+          this.onAction(clampDetail(goal?.objective, 40), "ok", "action");
         } else if (operation === "edit") {
           this._activity();
           this.completed = false;
@@ -328,7 +341,7 @@ export class PetBridgeState {
       case "todo/write": {
         const item = (data.todos ?? []).find((t) => t.status === "in_progress");
         if (item) {
-          this.onAction(clampDetail(item.content, 40), "ok");
+          this.onAction(clampDetail(item.content, 40), "ok", "action");
         }
         break;
       }

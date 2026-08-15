@@ -26,14 +26,14 @@ export class PetChannel {
    * 推送一个事件给桌宠。
    * @param {string} event 事件名（桌宠词汇表内，如 UserPromptSubmit / PreToolUse / done）
    * @param {string} detail 详情文本（气泡标题/短语）
-   * @param {string} [status] 可选：action 行的状态（ok/warn/error），仅 event==='action' 使用
+   * @param {string} [status] 可选：action 行的状态（ok/warn/error）
+   * @param {string} [kind] 可选：action 行类型（action=动作行 / summary=AI 总结）
    */
-  send(event, detail = "", status = "ok") {
-    const message = JSON.stringify(
-      status === "ok"
-        ? { src: "dsh-pet-bridge", event, detail }
-        : { src: "dsh-pet-bridge", event, detail, status },
-    );
+  send(event, detail = "", status = "ok", kind = "action") {
+    const payload = { src: "dsh-pet-bridge", event, detail };
+    if (status !== "ok") payload.status = status;
+    if (event === "action") payload.kind = kind;
+    const message = JSON.stringify(payload);
     const buf = Buffer.from(message, "utf-8");
     try {
       this.socket.send(buf, this.port, "127.0.0.1");

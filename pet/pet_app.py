@@ -607,20 +607,27 @@ class PetWidget(QWidget):
             self._bubble.show()
             self._sync_bubble_pos()
 
-    def set_action(self, text=" ", status="ok"):
-        """更新最新进度行（来自状态监听器）。"""
+    def set_action(self, text=" ", status="ok", kind="action"):
+        """更新气泡第二行（来自状态监听器）。
+
+        kind=action：动作行（工具进度等），不锁定；
+        kind=summary：AI 总结行，出现后锁定显示（原版语义），
+        新指令（空动作行）时解锁。
+        """
         self._action_text = text
         if status in ("ok", "warn", "error"):
             self._action_status = status
         else:
             self._action_status = "ok"
-        if status == "ok":
-            if text == " ":
-                self._has_ai_summary = False
-                self._ai_summary_text = ""
-            elif text not in self.KNOWN_ACTION_WORDS:
+        if kind == "summary":
+            if text:
                 self._has_ai_summary = True
                 self._ai_summary_text = text
+        else:  # action 行
+            if text == " ":
+                # 新指令：重置 AI 总结锁定
+                self._has_ai_summary = False
+                self._ai_summary_text = ""
         if self._show_bubble:
             self._update_bubble()
 
@@ -632,6 +639,9 @@ class PetWidget(QWidget):
         if action == "搜索中":
             return "搜索中"
         if action in self.KNOWN_ACTION_WORDS:
+            return "执行任务中"
+        if action and action != " ":
+            # 工具动作等具体进度 → 执行任务中
             return "执行任务中"
         return "回复中"
 

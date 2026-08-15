@@ -36,9 +36,9 @@ export function apply(ctx, config = {}) {
       logger.debug?.(`[dsh-pet-bridge] → ${event} ${detail ? `"${detail.slice(0, 40)}"` : ""}`);
       channel.send(event, detail);
     },
-    onAction: (text, status) => {
-      logger.debug?.(`[dsh-pet-bridge] → action ${status} "${text.slice(0, 40)}"`);
-      channel.send("action", text, status);
+    onAction: (text, status, kind) => {
+      logger.debug?.(`[dsh-pet-bridge] → action ${kind} ${status} "${text.slice(0, 40)}"`);
+      channel.send("action", text, status, kind);
     },
     onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
   });

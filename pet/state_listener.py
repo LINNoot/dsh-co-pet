@@ -51,7 +51,7 @@ class StateListener(QObject):
     """监听 DSH 插件推送的事件，转换为桌宠状态。"""
 
     state_changed = Signal(str, str, str)  # (state, detail, source)
-    action_changed = Signal(str, str)  # (text, status)
+    action_changed = Signal(str, str, str)  # (text, status, kind)
 
     def __init__(
         self,
@@ -101,7 +101,7 @@ class StateListener(QObject):
             event = str(message.get("event", "unknown"))
             detail = str(message.get("detail") or message.get("payload") or "")[:200]
             if event.strip().lower() == "action":
-                self.action_changed.emit(detail, str(message.get("status", "ok")))
+                self.action_changed.emit(detail, str(message.get("status", "ok")), str(message.get("kind", "action")))
                 continue
             self._handle(event, detail)
 
@@ -123,7 +123,7 @@ class StateListener(QObject):
         event = str(message.get("event", "unknown"))
         detail = str(message.get("detail") or message.get("payload") or "")[:200]
         if event.strip().lower() == "action":
-            self.action_changed.emit(detail, str(message.get("status", "ok")))
+            self.action_changed.emit(detail, str(message.get("status", "ok")), str(message.get("kind", "action")))
             return
         self._handle(event, detail)
 

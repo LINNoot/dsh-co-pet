@@ -30,10 +30,12 @@ def check(name, cond, extra=""):
         FAILURES.append(name)
 
 
-def send_udp(port, event, detail="", status=None):
+def send_udp(port, event, detail="", status=None, kind=None):
     payload = {"src": "dsh-pet-bridge", "event": event, "detail": detail}
     if status is not None:
         payload["status"] = status
+    if kind is not None:
+        payload["kind"] = kind
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(json.dumps(payload).encode("utf-8"), ("127.0.0.1", port))
     s.close()
@@ -86,8 +88,8 @@ def _run_listener(tmp):
     def on_state(state, detail, source):
         events.append(("state", state, detail, source))
 
-    def on_action(text, status):
-        events.append(("action", text, status))
+    def on_action(text, status, kind):
+        events.append(("action", text, status, kind))
 
     listener.state_changed.connect(on_state)
     listener.action_changed.connect(on_action)
@@ -105,8 +107,12 @@ def _run_listener(tmp):
         # 旧 Codex hook_notify 报文（无 src）必须被忽略——防污染
         send_udp_legacy(port, "SessionStart")
         send_udp_legacy(port, "Stop", "旧 Codex 事件")
-        # action 事件走 action_changed
-        send_udp(port, "action", "正在重构模块", status="ok")
+        # action 事件走 action_changed（动作行）
+        send_udp(port, "action", "正在重构模块", status="ok", kind="action")
+        # AI 总结（kind=summary）
+        send_udp(port, "action", "全部完成，共修改 12 个文件", status="ok", kind="summary")
+        # 新指令重置（空 action 行）
+        send_udp(port, "action", " ", status="ok", kind="action")
         # 状态文件通道
         state_file.write_text(json.dumps({"event": "failed", "detail": "LLM 超时"}), encoding="utf-8")
 
@@ -134,7 +140,9 @@ def _run_listener(tmp):
     check("未知事件被忽略", not has_state("idle", "x"))
     # 精确校验：旧 Codex 报文（无 src）不产生任何状态（状态数仍为 8）
     check("旧 Codex 报文不增加状态", len(states) == 8, f"({len(states)})")
-    check("action → action_changed", any(a[1] == "正在重构模块" and a[2] == "ok" for a in actions))
+    check("action → action_changed", any(a[1] == "正在重构模块" and a[2] == "ok" and a[3] == "action" for a in actions))
+    check("summary → action_changed(kind=summary)", any(a[1] == "全部完成，共修改 12 个文件" and a[3] == "summary" for a in actions))
+    check("新指令重置 → 空 action 行", any(a[1] == " " and a[3] == "action" for a in actions))
     check("状态文件通道 → failed", has_state("failed", "once:idle", "error"))
 
 

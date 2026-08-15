@@ -34,7 +34,7 @@ function makeHarness() {
         now: () => now,
         schedule,
         onEvent: (event, detail) => events.push({ event, detail }),
-        onAction: (text, status) => actions.push({ text, status }),
+        onAction: (text, status, kind) => actions.push({ text, status, kind }),
         ...overrides,
       });
       return { state, events, actions };
@@ -270,7 +270,7 @@ test("todo 更新 → action 行", () => {
     type: "todo/write",
     data: { todos: [{ content: "实现桥接插件", status: "in_progress" }] },
   });
-  assert.deepEqual(actions.at(-1), { text: "实现桥接插件", status: "ok" });
+  assert.deepEqual(actions.at(-1), { text: "实现桥接插件", status: "ok", kind: "action" });
 });
 
 test("活动心跳：running 期间发空事件保活，不改变任务文本", () => {
@@ -337,6 +337,45 @@ test("兜底触发时输出日志（onLog）", () => {
   state.onTick();
   assert.equal(events.at(-1).event, "idle");
   assert.ok(logs.some((l) => l.includes("空闲兜底触发")), `日志应有兜底记录: ${logs.join("|")}`);
+});
+
+test("模型完整回复 → AI 总结（kind=summary，20 字截断）", () => {
+  const h = makeHarness();
+  const { state, actions } = h.makeState();
+  state.onSessionEvent({
+    type: "assistant/message",
+    data: { message: { content: [{ type: "text", text: "这个任务已经全部完成了，共修改了十二个文件并且通过了所有测试。" }] } },
+  });
+  const last = actions.at(-1);
+  assert.equal(last.status, "ok");
+  assert.equal(last.kind, "summary");
+  assert.ok(last.text.length <= 23, `总结应截断到 20 字左右: ${last.text}`);
+  assert.ok(last.text.endsWith("…") || last.text.endsWith("..."));
+});
+
+test("assistant/message 无文本（纯工具回合）不发总结", () => {
+  const h = makeHarness();
+  const { state, actions } = h.makeState();
+  const before = actions.length;
+  state.onSessionEvent({
+    type: "assistant/message",
+    data: { message: { content: [{ type: "reasoning", text: "思考..." }] } },
+  });
+  assert.equal(actions.length, before, "无文本不应发总结");
+});
+
+test("新指令重置：user/message 发空 action 行", () => {
+  const h = makeHarness();
+  const { state, actions } = h.makeState();
+  state.onSessionEvent(userMessage("开始"));
+  assert.deepEqual(actions.at(-1), { text: " ", status: "ok", kind: "action" });
+});
+
+test("工具调用动作行为 kind=action（不锁定总结）", () => {
+  const h = makeHarness();
+  const { state, actions } = h.makeState();
+  state.onSessionEvent({ type: "tool/call", data: { name: "edit" } });
+  assert.deepEqual(actions.at(-1), { text: "调用 edit", status: "ok", kind: "action" });
 });
 
 test("dispose 清理挂起完成信号", () => {
