@@ -1,0 +1,25 @@
+# dsh-pet-bridge bundle patch：把桌宠桥接挂进任何 dsh profile。
+# 安装方式：dsh plugin --profile <name> add <本包路径或包名>
+#
+# 用户可在 profile 的 cordis.patch.yml 中按 id 覆盖下列配置，例如：
+#   - id: pet-bridge
+#     config:
+#       petPath: 'C:/tools/dsh-pet/DshPet.exe'
+- insert:
+    - id: pet-bridge
+      name: 'dsh-pet-bridge'
+      config:
+        # 桌宠 UDP 监听端口（与 pet_config.json 的 port 一致）
+        port: 47890
+        # 状态文件（默认 ~/.dsh/dsh-pet-state.json）
+        stateFile: '~/.dsh/dsh-pet-state.json'
+        # 随 DSH 启动桌宠的可执行文件路径；留空则仅当设置了环境变量
+        # DSH_PET_PATH 时生效。开发模式（pythonw 直启 pet_app.py）请同时
+        # 提供 petArgs: ['<绝对路径>/pet_app.py']
+        petPath: ''
+        petArgs: []
+        autoLaunch: true
+        # 目标完成后的静默去抖窗口（毫秒）：窗口内出现任何新活动则取消完成
+        completionQuietMs: 8000
+        # 空闲兜底（毫秒）：running/review 状态超过该时长无活动则回 idle
+        idleTimeoutMs: 90000

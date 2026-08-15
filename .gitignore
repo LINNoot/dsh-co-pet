@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec
+
+# 桌宠运行时
+pet/pet_config.json
+
+# 宠物素材不随仓库分发（授权不明）；请放入自己的宠物包
+pet/pets/*
+!pet/pets/README.md
+
+# 环境
+.env

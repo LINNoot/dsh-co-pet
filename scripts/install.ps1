@@ -1,0 +1,173 @@
+﻿# dsh-pet 安装器
+#
+# 用法：
+#   powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+#     [-Profile web] [-PluginDir <插件目录绝对路径>] [-PetDir <桌宠目录>]
+#     [-InstallPetTo <目标目录>] [-PetExe <桌宠 exe 路径>] [-NoShortcut] [-NoAutoLaunch]
+#     [-Force]（已存在 pet-bridge 覆盖时也强制重写）
+#
+# 行为：
+#   1. 把桌宠应用（pet/）复制到目标目录（默认 $env:LOCALAPPDATA\dsh-pet）；
+#   2. 用 `dsh plugin --profile <name> add` 把 dsh-pet-bridge 装进指定 profile；
+#   3. 在该 profile 的 cordis.patch.yml 用户层写入 petPath 覆盖（随 DSH 启动）；
+#   4. 可选：创建桌面快捷方式（启动桌宠）。
+param(
+    [string]$Profile = "web",
+    [string]$PluginDir = "",
+    [string]$PetDir = "",
+    [string]$InstallPetTo = "",
+    [string]$PetExe = "",
+    [switch]$NoShortcut,
+    [switch]$NoAutoLaunch,
+    [switch]$Force
+)
+
+$ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+
+# pnpm 可能只装在用户级 npm 全局目录（未入 PATH）
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    $npmBin = Join-Path $env:APPDATA "npm"
+    if (Test-Path (Join-Path $npmBin "pnpm.cmd")) {
+        $env:PATH = "$npmBin;$env:PATH"
+    }
+}
+
+if (-not $PluginDir) { $PluginDir = Join-Path $RepoRoot "plugin" }
+if (-not $PetDir) { $PetDir = Join-Path $RepoRoot "pet" }
+if (-not $InstallPetTo) { $InstallPetTo = Join-Path $env:LOCALAPPDATA "dsh-pet" }
+
+function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
+
+# ---------- 1. 部署桌宠 ----------
+Write-Step "部署桌宠到 $InstallPetTo"
+New-Item -ItemType Directory -Force -Path $InstallPetTo | Out-Null
+foreach ($name in @("pet_app.py", "state_listener.py", "pet_loader.py", "pet_style.py", "requirements.txt")) {
+    Copy-Item (Join-Path $PetDir $name) $InstallPetTo -Force
+}
+foreach ($dir in @("pets", "assets", "fonts")) {
+    $src = Join-Path $PetDir $dir
+    if (Test-Path $src) {
+        Copy-Item $src $InstallPetTo -Recurse -Force
+    }
+}
+$petConfig = Join-Path $InstallPetTo "pet_config.json"
+if (-not (Test-Path $petConfig)) {
+    '{"pet": null, "scale": 1.0, "fps": 10, "port": 47890, "always_on_top": true, "show_status_text": false, "show_bubble": true}' |
+        Set-Content -Path $petConfig -Encoding UTF8
+}
+
+# 桌宠可执行文件：优先用户指定；其次已构建的 exe；否则回退 pythonw 启动
+if (-not $PetExe) {
+    $built = Join-Path $InstallPetTo "DshPet.exe"
+    if (Test-Path $built) { $PetExe = $built }
+    else {
+        $pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+        if (-not $pythonw) {
+            # 尝试 venv 中的 pythonw
+            $venvPw = Join-Path $RepoRoot ".venv\Scripts\pythonw.exe"
+            if (Test-Path $venvPw) { $pythonw = $venvPw }
+        }
+        if ($pythonw) {
+            $PetExe = $pythonw
+        } else {
+            throw "未找到 pythonw.exe，请先安装 Python 3.11+ 或提供 -PetExe"
+        }
+    }
+}
+Write-Host "    桌宠启动器: $PetExe"
+
+# ---------- 2. 安装 DSH 插件 ----------
+Write-Step "安装 dsh-pet-bridge 到 profile '$Profile'"
+$pluginAbs = [System.IO.Path]::GetFullPath($PluginDir)
+& dsh plugin --profile $Profile add $pluginAbs
+if ($LASTEXITCODE -ne 0) { throw "dsh plugin add 失败（退出码 $LASTEXITCODE）" }
+
+# ---------- 3. 写入 petPath 覆盖 ----------
+if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
+else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
+$patchFile = Join-Path $profileDir "cordis.patch.yml"
+Write-Step "写入 profile 用户层覆盖: $patchFile"
+$petPathEsc = ($PetExe -replace "\\", "/") -replace "'", "''"
+
+# pythonw 直启 pet_app.py 时需要参数；打包好的 DshPet.exe 不需要
+$argsLine = ""
+if ($PetExe -match "pythonw") {
+    $petArgs = (Join-Path $InstallPetTo "pet_app.py") -replace "\\", "/"
+    $argsLine = "    petArgs: ['$petArgs']`n"
+}
+
+$override = @"
+- id: pet-bridge
+  config:
+    petPath: '$petPathEsc'
+$argsLine    autoLaunch: $(-not $NoAutoLaunch)
+"@
+
+# 用户层是个补丁列表：要么是空列表（[]），要么已有其他条目。
+# 若当前为 `[]`（含注释），整体替换为覆盖块；否则在列表末尾追加。
+if (Test-Path $patchFile) {
+    $lines = @(Get-Content $patchFile)
+    $nonComment = @($lines | Where-Object { $_ -notmatch "^\s*#" -and $_.Trim() -ne "" })
+    $hasBridge = $false
+    foreach ($line in $lines) { if ($line -match "^-\s*id:\s*pet-bridge\s*$") { $hasBridge = $true; break } }
+    if ($hasBridge -and $Force) {
+        # -Force：先移除全部旧 pet-bridge 块，写回文件后再按下方逻辑重写
+        $tmp = New-Object System.Collections.Generic.List[string]
+        $skip = $false
+        foreach ($line in $lines) {
+            if ($line -match "^-\s*id:\s*pet-bridge\s*$") { $skip = $true; continue }
+            if ($skip) {
+                if ($line -match "^-\s|^#") { $skip = $false }
+                else { continue }
+            }
+            if (-not $skip) { $tmp.Add($line) }
+        }
+        $lines = @($tmp)
+        Set-Content -Path $patchFile -Value $lines -Encoding UTF8
+        $nonComment = @($lines | Where-Object { $_ -notmatch "^\s*#" -and $_.Trim() -ne "" })
+        $hasBridge = $false
+        Write-Host "    -Force：已移除旧 pet-bridge 覆盖"
+    }
+    if ($hasBridge) {
+        Write-Host "    cordis.patch.yml 已包含 pet-bridge 覆盖，跳过（使用 -Force 可重写）"
+    } elseif ($nonComment.Count -eq 1 -and $nonComment[0].Trim() -eq "[]") {
+        # 空列表：保留注释，把 [] 替换为覆盖块
+        $out = New-Object System.Collections.Generic.List[string]
+        foreach ($line in $lines) {
+            if ($line.Trim() -eq "[]") { $out.Add($override.TrimEnd()) }
+            else { $out.Add($line) }
+        }
+        Set-Content -Path $patchFile -Value $out -Encoding UTF8
+        Write-Host "    已将空列表替换为 pet-bridge 配置覆盖"
+    } else {
+        $trimmed = (Get-Content $patchFile -Raw).TrimEnd()
+        Add-Content -Path $patchFile -Value "`n$override" -Encoding UTF8
+        Write-Host "    已在列表末尾追加 pet-bridge 配置覆盖"
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+    Set-Content -Path $patchFile -Value $override -Encoding UTF8
+}
+
+# ---------- 4. 桌面快捷方式 ----------
+if (-not $NoShortcut) {
+    Write-Step "创建桌面快捷方式（启动桌宠）"
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $lnk = Join-Path $desktop "DSH 桌宠.lnk"
+    $ws = New-Object -ComObject WScript.Shell
+    $sc = $ws.CreateShortcut($lnk)
+    $sc.TargetPath = $PetExe
+    $sc.Arguments = ""
+    if ($PetExe -match "pythonw") {
+        $sc.Arguments = """$(Join-Path $InstallPetTo 'pet_app.py')"""
+        $sc.WorkingDirectory = $InstallPetTo
+    } else {
+        $sc.WorkingDirectory = Split-Path -Parent $PetExe
+    }
+    $sc.Save()
+}
+
+Write-Host ""
+Write-Host "安装完成。请重启 DSH（dsh web）使插件生效；桌宠将随 DSH 启动。" -ForegroundColor Green
+Write-Host "桌宠也可通过快捷方式或直接运行 '$PetExe' 手动启动。" -ForegroundColor Green
