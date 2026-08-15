@@ -182,11 +182,26 @@ test("目标受阻 → failed", () => {
   assert.equal(events.at(-1).event, "failed");
 });
 
-test("长时间无活动 → idle 兜底", () => {
+test("agent/status idle（无 turn/end）→ 立即 AgentStop，不再等 90s 兜底", () => {
+  // 新架构核心：运行门闩由 agent/status 直接开合——agent 一空闲，
+  // 展示态立即收为等待输入，而不是靠 90s 空闲兜底（旧行为：永久 running）。
   const h = makeHarness();
   const { state, events } = h.makeState({ idleMs: 90000 });
   state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
   state.onAgentStatus("agent-1", "idle");
+  assert.equal(events.at(-1).event, "AgentStop");
+  h.advance(95_000);
+  state.onTick();
+  assert.ok(!events.some((e) => e.event === "idle"), "agent 已空闲，不应触发兜底");
+});
+
+test("门闩开着但事件流完全中断 → 90s 兜底回 idle", () => {
+  // 兜底只负责极端防御：gate 开着（turn/start/user 信号兜底打开）且
+  // 90s 无任何活动（agent/status 与 turn/end 都没到）→ 显式回 idle。
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始")); // 开 gate，但 agent/status 从未到达
   h.advance(95_000);
   state.onTick();
   assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
@@ -223,14 +238,15 @@ test("子代理长时间运行期间不触发空闲兜底（有活动事件）",
   state.onSessionEvent(userMessage("开始"));
   state.onAgentStatus("agent-1", "running");
   state.onAgentStatus("agent-1", "idle"); // 主 agent 等待子代理
-  state.onAgentStatus("agent-2", "running"); // 子代理在跑（真实运行会产生事件）
+  state.onAgentStatus("agent-2", "running"); // 子代理在跑 → 门闩重开，展示回 running
+  assert.equal(state.mode, "running", "子代理运行中展示态应回 running");
   for (let i = 0; i < 5; i++) {
     h.advance(20_000);
     state.onActivity("assistant/chunk"); // 子代理会话活动事件
     state.onTick();
   }
   assert.ok(!events.some((e) => e.event === "idle"), "子代理活动期间不应回 idle");
-  // 子代理静默（事件流中断）→ 兜底最终触发
+  // 子代理静默（事件流中断）且门闩仍开 → 兜底最终触发
   h.advance(95_000);
   state.onTick();
   assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
@@ -261,12 +277,12 @@ test("等待输入（waiting）不触发空闲兜底", () => {
   assert.ok(!events.some((e) => e.event === "idle"), "等待输入不应回 idle");
 });
 
-test("状态残留 running 且长时间无任何活动 → idle 兜底", () => {
+test("状态残留 running（无 idle 信号）且长时间无活动 → idle 兜底", () => {
   const h = makeHarness();
   const { state, events } = h.makeState({ idleMs: 90000 });
   state.onSessionEvent(userMessage("开始"));
   state.onAgentStatus("agent-1", "running");
-  state.onAgentStatus("agent-1", "idle"); // 事件流中断，mode 残留 running
+  // agent/status idle 事件丢失：门闩仍开、mode 仍 running，且无任何活动
   h.advance(95_000);
   state.onTick();
   assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
@@ -377,7 +393,7 @@ test("兜底触发时输出日志（onLog）", () => {
     onLog: (msg) => logs.push(msg),
   });
   state.onSessionEvent(userMessage("开始"));
-  state.onAgentStatus("agent-1", "idle");
+  state.onAgentStatus("agent-1", "running"); // idle 事件丢失：门闩残留打开
   h.advance(95_000);
   state.onTick();
   assert.equal(events.at(-1).event, "idle");
@@ -460,7 +476,14 @@ test("快照：agent/status 进入 runningAgents；完成挂起可见", () => {
   const snap = snaps.at(-1);
   assert.ok(snap.anyRunning);
   assert.deepEqual(snap.runningAgents, ["agent-1"]);
-  // 完成挂起
+  assert.equal(snap.gateRunning, true);
+  assert.equal(snap.gateSource, "agent/status");
+  state.onAgentStatus("agent-1", "idle");
+  state.onTick();
+  assert.equal(snaps.at(-1).gateRunning, false);
+  assert.equal(snaps.at(-1).gateSource, "agent/status");
+  // 完成挂起（agent 重新运行，未空闲）
+  state.onAgentStatus("agent-1", "running");
   state.onSessionEvent(goalChange("complete", { objective: "X" }));
   state.onTick();
   assert.equal(snaps.at(-1).pendingComplete, true);

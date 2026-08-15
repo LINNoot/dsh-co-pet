@@ -30,8 +30,25 @@
 
 ## 插件状态机（plugin/state.js）
 
-输入被归一化为四类：`agent-status`、`session-event`、`failure`、`tick`。
-关键设计：
+分层状态机：**运行门闩（gate）与展示态（mode）分离**。
+
+### 分层设计
+
+```text
+运行门闩 gateRunning（“有没有 agent 在工作”）      展示态 mode（“桌宠该演什么”）
+  只由 agent/status 开合（DSH 内核维护的权威信号）     只由结论事件设置：
+  running ──► 开（含子代理）                         turn/end reason → waiting/failed/idle
+  idle    ──► 关                                      approval 结果 → waiting/idle
+  turn/start / user/message ──► 兜底开                goal 结论 → running/waiting/failed/done
+  （agent/status 缺失时自动降级）                     review（工具产出 diff）
+```
+
+- **内容事件（chunk / step / tool / todo / request）只刷新活动时间 + 出气泡，
+  永不改写 mode**——杜绝“推理流把状态拉回 running”掩盖真实状态的问题；
+- `agent/status idle` 到达即收状态（等待输入），**不再依赖 90s 兜底**；
+  90s 兜底降级为极端防御：触发即显式日志（暴露事件流漏洞），并用快照回溯；
+- 快照：每 5s 原子写 `~/.dsh/dsh-pet-state.debug.json`（mode / gate /
+  runningAgents / 最近 20 条事件历史），复现状态问题时直接查档定位。
 
 ### 完成判定（核心修复）
 
@@ -39,14 +56,15 @@
 goal/change(complete) ──► armComplete（8s 去抖窗口）
                               │
        窗口内任何新活动 ──► 取消（用户继续追问、工具调用、子代理运行……）
-       窗口到期且无活动 ──► done → 桌宠 waving 单次 → waiting
+       窗口到期且（无 agent 运行 或 30s 无任何活动）──► done → waving 单次 → waiting
 ```
 
 - **轮次结束（turn/end completed）绝不触发完成**，只发 `AgentStop`
   （桌宠进入 waiting 等待输入）；
 - 子代理会话（`header.origin === 'subagent'` 或带 `delegationDepth`）的
   turn/goal 事件被过滤，避免子任务完成误触发父任务完成；
-- `agent/status` 监听所有 agent（含子代理）：任一 running 即保持 running。
+- `agent/status` 监听所有 agent（含子代理）：任一 running 即保持门闩打开；
+- “30s 无活动”兜底覆盖 agent/status idle 事件丢失（状态卡 running）的极端场景。
 
 ### 事件映射表
 
@@ -67,7 +85,8 @@ goal/change(complete) ──► armComplete（8s 去抖窗口）
 | `goal/change` block | `failed` | failed 单次 → idle |
 | `goal/change` create/edit/resume | `agent_message` | running |
 | `todo/write`（in_progress） | `action` | 气泡进度行 |
-| 90s 无活动（tick） | `idle` | idle |
+| `agent/status` idle（无 turn/end） | `AgentStop` | waiting（立即反映，不等兜底） |
+| 门闩开且 90s 无活动（tick，极端防御） | `idle` | idle |
 
 ## 桌宠词汇表（pet/state_listener.py）
 

@@ -2,11 +2,17 @@
 //
 // 输入：DSH 事件（已在 index.js 归一化）→ 输出：桌宠事件（event/detail/action）。
 //
-// 与 Codex 版桌宠相比的关键修复：
+// 架构（分层状态机）：
+// - 运行门闩 gateRunning：只由 agent/status 开合（DSH 内核自己维护的
+//   running⇄idle，进程内原子 emit，与内核实际状态永远一致）；turn/start
+//   作为兜底打开（实证 agent/status 不可靠时自动降级为回合级信号）。
+// - 展示态 mode（idle|running|review|waiting）：只由结论事件设置——
+//   turn/end reason、approval 结果、goal/change 结论、失败信号。
+// - 内容事件（chunk/step/tool/todo/user/request）只刷新活动时间 + 出气泡，
+//   永不改写 mode——杜绝"内容事件把状态拉回 running"掩盖真实状态的问题。
 // - “完成”只在 目标完成（goal complete）+ 静默去抖窗口（quietMs）内无任何新
 //   活动时才触发；轮次结束只进入等待态，绝不中途“庆祝”。
-// - 任何新活动都会取消挂起的完成信号。
-// - 长时间无活动（idleMs）兜底回到 idle。
+// - 长时间无活动（idleMs）兜底是极端防御，触发即显式日志（暴露事件流漏洞）。
 
 const clampDetail = (text, max = 120) => {
   const s = String(text ?? "").replace(/\s+/g, " ").trim();
@@ -65,7 +71,9 @@ export class PetBridgeState {
 
     // —— 镜像状态 ——
     this.hadTurn = false; // 本轮会话是否出现过 turn
-    this.mode = "idle"; // idle | running | review | waiting
+    this.mode = "idle"; // 展示态：idle | running | review | waiting
+    this.gateRunning = false; // 运行门闩：由 agent/status 开合（turn/start 兜底开）
+    this.gateSource = null; // 门闩最近一次变迁来源（诊断）
     this.lastActivityAt = this.now();
     this.lastIdleSentAt = 0;
     this.pendingComplete = null; // 挂起的完成信号 { cancel, detail }
@@ -85,6 +93,43 @@ export class PetBridgeState {
   _activity() {
     this._touch();
     this._cancelPendingComplete();
+  }
+
+  /** 打开运行门闩（有 agent 在工作）。 */
+  _openGate(source) {
+    const wasClosed = !this.gateRunning;
+    this.gateRunning = true;
+    this.gateSource = source;
+    // 门闩从关到开的瞬间：任何非 review 展示态都回 running
+    // （含 waiting——如主 agent 空闲等待期间子代理启动）。
+    // 门闩保持打开时（如授权等待中）不动展示态。
+    if (wasClosed && this.mode !== "review") {
+      this.mode = "running";
+    }
+  }
+
+  /** 关闭运行门闩（无 agent 在工作）。不改展示态——由结论事件设置。 */
+  _closeGate(source) {
+    if (!this.gateRunning) return;
+    this.gateRunning = false;
+    this.gateSource = source;
+    // 若结论事件（turn/end 等）缺失，兜底把仍在 running/review 的展示态
+    // 收为 waiting，避免"任务结束还显示运行中"。
+    if (this.mode === "running" || this.mode === "review") {
+      this.mode = "waiting";
+      this.onEvent("AgentStop", "等待你的输入");
+    }
+  }
+
+  /**
+   * 内容事件的防御性恢复：仅当展示态卡在 idle/failed 时回到 running。
+   * 正常情况下展示态由权威信号维护，此方法只在信号链断裂时兜底，
+   * 绝不把 waiting/review（等待类展示）拉回 running。
+   */
+  _defensiveRunning() {
+    if (this.mode === "idle" || this.mode === "failed") {
+      this.mode = "running";
+    }
   }
 
   _cancelPendingComplete() {
@@ -127,7 +172,8 @@ export class PetBridgeState {
   }
 
   /**
-   * agent/status：任一 agent（含子代理）运行/空闲。
+   * agent/status：任一 agent（含子代理）运行/空闲。这是运行门闩的
+   * 唯一权威信号（DSH 内核维护），展示态由结论事件负责。
    * @param {string} agentId agent 标识（agent.id / session id）
    * @param {string} status 'running' | 'idle'
    */
@@ -136,13 +182,17 @@ export class PetBridgeState {
       const wasIdle = this.runningAgents.size === 0;
       this.runningAgents.add(agentId);
       this._activity();
+      this._openGate("agent/status");
       if (wasIdle && !this.completed) {
         this.onEvent("AgentStart", "任务进行中");
       }
       return;
     }
-    // idle：只移除该 agent；其他 agent 仍在运行则保持 anyRunning
+    // idle：只移除该 agent；其他 agent 仍在运行则保持门闩打开
     this.runningAgents.delete(agentId);
+    if (this.runningAgents.size === 0) {
+      this._closeGate("agent/status");
+    }
   }
 
   /** 是否有任一 agent（含子代理）正在运行。 */
@@ -159,24 +209,12 @@ export class PetBridgeState {
   }
 
   /**
-   * 任意会话的活动事件（含子代理）：只刷新活动时间与运行状态，
-   * 不产生任何桌宠事件。用于让长推理/子代理运行期间插件端
-   * 空闲兜底（90s）不会误触发。
+   * 任意会话的活动事件（含子代理）：只刷新活动时间，不产生任何桌宠事件、
+   * 不改变状态。用于让长推理/子代理运行期间插件端空闲兜底（90s）不会误触发。
    * @param {string} type 会话事件类型（turn/start、step/start、assistant/chunk 等）
    */
   onActivity(type) {
     this._touch();
-    if (
-      type === "turn/start" ||
-      type === "step/start" ||
-      type === "assistant/chunk" ||
-      type === "assistant/message" ||
-      type === "request/header"
-    ) {
-      if (this.mode !== "waiting") {
-        this.mode = "running";
-      }
-    }
   }
 
   /**
@@ -206,16 +244,16 @@ export class PetBridgeState {
         this.thinking = false;
         this._activity();
         this.completed = false;
+        // 新回合一定在工作：开运行门闩（agent/status 缺失时的兜底）+ 展示态
+        this._openGate("turn/start");
         this.mode = "running";
         break;
       }
       case "step/start":
       case "assistant/chunk":
       case "request/header": {
-        // 模型推理/请求期间保持运行态（防止 mode 残留导致兜底误判）
-        if (this.mode !== "waiting") {
-          this.mode = "running";
-        }
+        // 内容事件不改写展示态；仅当展示态卡在 idle/failed 时防御性恢复
+        this._defensiveRunning();
         // 思考态动作行：每段推理流只提示一次"正在思考"（节流）
         if (type === "assistant/chunk" && !this.thinking) {
           this.thinking = true;
@@ -225,9 +263,7 @@ export class PetBridgeState {
       }
       case "assistant/message": {
         // 模型完整回复 → AI 总结（气泡第二行，kind=summary，锁定显示）
-        if (this.mode !== "waiting") {
-          this.mode = "running";
-        }
+        this._defensiveRunning();
         this.thinking = false;
         const summary = firstText(data.message?.content);
         if (summary) {
@@ -243,6 +279,8 @@ export class PetBridgeState {
           this.thinking = false;
           this.completed = false;
           this._activity();
+          // 用户发话：展示态回到运行
+          this._openGate("user/message");
           this.mode = "running";
           this.onEvent("UserPromptSubmit", clampDetail(firstText(data.content)));
           // 新指令：动作行"收到指令"并重置 AI 总结锁定（原版语义）
@@ -254,7 +292,7 @@ export class PetBridgeState {
         this.thinking = false;
         this._activity();
         this.completed = false;
-        this.mode = "running";
+        this._defensiveRunning();
         this.onEvent("PreToolUse", `调用工具 ${data.name}`);
         this.onAction(`调用 ${data.name}`, "ok", "action");
         break;
@@ -264,7 +302,7 @@ export class PetBridgeState {
         this._activity();
         this.completed = false;
         if (data.error) {
-          this.mode = "running";
+          this._defensiveRunning();
           this.onEvent("PostToolUse", `工具出错 ${data.error.code ?? data.error.name ?? ""}`.trim());
           this.onAction(`工具出错：${data.error.code ?? data.error.name ?? ""}`, "error", "action");
           break;
@@ -278,7 +316,7 @@ export class PetBridgeState {
           this.onEvent("patch_apply", detail);
           this.onAction(detail, "ok", "action");
         } else {
-          this.mode = "running";
+          this._defensiveRunning();
           // ToolResultMessage.content 是 [ToolResultBlock]（无 name 字段），
           // 工具名已在 tool/call 显示过，这里统一用通用文案。
           this.onEvent("PostToolUse", "工具执行完成");
@@ -326,16 +364,18 @@ export class PetBridgeState {
         if (outcome === "allowed-once") {
           this._activity();
           this.completed = false;
-          this.mode = "running";
+          this._defensiveRunning();
           this.onEvent("agent_message", "已授权，继续执行");
           this.onAction("已授权，继续执行", "ok", "action");
         } else if (outcome === "rejected") {
           this.completed = false;
           this.mode = "idle";
+          this._closeGate("approval");
           this.onEvent("deny", "已拒绝授权");
         } else if (outcome === "cancelled") {
           this.completed = false;
           this.mode = "idle";
+          this._closeGate("approval");
           this.onEvent("idle", "授权已取消");
         } else {
           // unavailable：无可用的回答者 → 保持等待
@@ -356,13 +396,13 @@ export class PetBridgeState {
         } else if (operation === "create") {
           this._activity();
           this.completed = false;
-          this.mode = "running";
+          this._defensiveRunning();
           this.onEvent("agent_message", "目标已创建，开始执行");
           this.onAction(clampDetail(goal?.objective, 40), "ok", "action");
         } else if (operation === "edit") {
           this._activity();
           this.completed = false;
-          this.mode = "running";
+          this._defensiveRunning();
           this.onEvent("agent_message", "目标已更新");
         } else if (operation === "pause") {
           this.mode = "waiting";
@@ -370,7 +410,7 @@ export class PetBridgeState {
         } else if (operation === "resume") {
           this._activity();
           this.completed = false;
-          this.mode = "running";
+          this._defensiveRunning();
           this.onEvent("agent_message", "目标已恢复");
         }
         // clear：忽略
@@ -393,8 +433,10 @@ export class PetBridgeState {
     if (this.mode === "running" || this.mode === "review") {
       if (this.now() - this.lastActivityAt > this.idleMs) {
         this.mode = "idle";
+        // 极端防御：正常运行中 agent/status 与 turn/end 都会把状态收走，
+        // 走到这里说明事件流有洞（快照 history 可回溯）。显式记录，不静默兜底。
         this.onLog(
-          `空闲兜底触发: mode=${this.mode}, 距上次活动 ${Math.round((this.now() - this.lastActivityAt) / 1000)}s (>${this.idleMs / 1000}s), runningAgents=${this.runningAgents.size}`,
+          `空闲兜底触发(事件流异常): gate=${this.gateRunning}(src=${this.gateSource}), 距上次活动 ${Math.round((this.now() - this.lastActivityAt) / 1000)}s (>${this.idleMs / 1000}s), runningAgents=[${[...this.runningAgents].join(",")}]`,
         );
         this.onEvent("idle", "长时间无活动");
       }
@@ -410,6 +452,8 @@ export class PetBridgeState {
     return {
       ts: now,
       mode: this.mode,
+      gateRunning: this.gateRunning,
+      gateSource: this.gateSource,
       hadTurn: this.hadTurn,
       completed: this.completed,
       thinking: this.thinking,

@@ -79,10 +79,12 @@ export function apply(ctx, config = {}) {
     "todo/write",
   ]);
 
-  // 任一 agent（含子代理）状态变化
+  // 任一 agent（含子代理）状态变化。agent/status 经 dsh-scope 分发时
+  // payload 带 agent 对象；个别路径只 emit {status}，防御性取 id。
   ctx.on("agent/status", ({ agent, status }) => {
-    logger.debug?.(`[dsh-pet-bridge] agent/status ${agent.id} → ${status}`);
-    bridge.onAgentStatus(agent.id, status);
+    const agentId = agent?.id ?? "unknown";
+    logger.debug?.(`[dsh-pet-bridge] agent/status ${agentId} → ${status}`);
+    bridge.onAgentStatus(agentId, status);
   });
 
   // 会话日志事件（仅实时追加；重放/种子不触发）
