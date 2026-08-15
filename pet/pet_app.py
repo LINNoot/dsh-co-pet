@@ -27,7 +27,7 @@ from typing import ClassVar
 
 from pet_loader import STANDARD_STATES, Pet, pil_to_qimage, scan_pets
 from pet_style import FONT_FAMILIES, apply_codex_style
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -61,21 +61,26 @@ DEFAULT_CONFIG: dict = {
 }
 
 # —— 气泡排版（原版 Codex 样式：白色胶囊 + 柔和投影）——
+# 常量值与原版反汇编逐一核对（BUBBLE_SHADOW_M=20 等），复刻原版观感。
 BUBBLE_MAX_WIDTH = 480          # 气泡最大宽度（px）
 BUBBLE_PAD_X = 12               # 水平内边距
 BUBBLE_PAD_TOP = 5              # 上内边距
-BUBBLE_PAD_BOTTOM = 5           # 下内边距
+BUBBLE_PAD_BOTTOM = 6           # 下内边距
 BUBBLE_TITLE_H = 19             # 标题行高（13px 粗体）
-BUBBLE_LINE_H = 17              # 摘要行高（13px）
-BUBBLE_GAP = 3                  # 标题与摘要间距
-BUBBLE_SHADOW_M = 12            # 投影外扩边距
-BUBBLE_SHADOW_EXTRA = 4         # 底部投影额外边距
+BUBBLE_LINE_H = 18              # 摘要行高（13px）
+BUBBLE_GAP = 0                  # 标题与摘要间距
+BUBBLE_SHADOW_M = 20            # 投影外扩边距
+BUBBLE_SHADOW_EXTRA = 6         # 底部投影额外边距
 BUBBLE_CIRCLE_D = 28            # 状态圆圈直径
-BUBBLE_CIRCLE_GAP = 8           # 圆圈与文字间距
+BUBBLE_CIRCLE_GAP = 6           # 圆圈与文字间距
 
 
 class StatusCircle(QLabel):
-    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号。"""
+    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号（原版复刻）。
+
+    原版交互：hover 时出现同色光晕（外扩 4px、alpha 110），
+    非 hover 时本体缩小 6px；点击（非隐藏态）发出 clicked 信号。
+    """
 
     clicked = Signal()
 
@@ -91,60 +96,79 @@ class StatusCircle(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mode = self.MODE_HIDDEN
+        self._hovered = False
         self.setFixedSize(BUBBLE_CIRCLE_D, BUBBLE_CIRCLE_D)
-
-    def enterEvent(self, event):
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self.unsetCursor()
-        super().leaveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
-            self.clicked.emit()
-        super().mouseReleaseEvent(event)
 
     def set_mode(self, mode: str):
         if mode != self._mode:
             self._mode = mode
+            if mode == self.MODE_HIDDEN:
+                self._hovered = False
+                self.unsetCursor()
             self.update()
 
     def mode(self) -> str:
         return self._mode
 
+    def enterEvent(self, event):
+        if self._mode != self.MODE_HIDDEN:
+            self._hovered = True
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.unsetCursor()
+        self.update()
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # 原版：仅非隐藏态响应点击
+        if self._mode != self.MODE_HIDDEN:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
         if self._mode == self.MODE_HIDDEN:
             painter.end()
             return
         bg, fg = self.COLORS.get(self._mode, (QColor("#E9E9E9"), QColor("#666666")))
         painter.setPen(Qt.PenStyle.NoPen)
+        if self._hovered:
+            # 光晕：外扩 4px 的底色圆（alpha 110）
+            halo = QRect(-2, -2, BUBBLE_CIRCLE_D + 4, BUBBLE_CIRCLE_D + 4)
+            halo_color = QColor(bg)
+            halo_color.setAlpha(110)
+            painter.setBrush(halo_color)
+            painter.drawEllipse(halo)
+            body_rect = QRect(0, 0, BUBBLE_CIRCLE_D, BUBBLE_CIRCLE_D)
+        else:
+            body_rect = QRect(3, 3, BUBBLE_CIRCLE_D - 6, BUBBLE_CIRCLE_D - 6)
         painter.setBrush(bg)
-        painter.drawEllipse(rect)
-        painter.setBrush(fg)
+        painter.drawEllipse(body_rect)
+
         if self._mode == self.MODE_DONE:
-            # 绿勾
-            path = QPainterPath()
-            path.moveTo(rect.left() + rect.width() * 0.28, rect.top() + rect.height() * 0.52)
-            path.lineTo(rect.left() + rect.width() * 0.44, rect.top() + rect.height() * 0.68)
-            path.lineTo(rect.left() + rect.width() * 0.74, rect.top() + rect.height() * 0.32)
-            pen = QPen(fg, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            # 绿勾（原版固定坐标：28px 圆内）
+            pen = QPen(fg, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
+            path = QPainterPath()
+            path.moveTo(8.0, 14.0)
+            path.lineTo(12.0, 18.0)
+            path.lineTo(20.0, 9.5)
             painter.drawPath(path)
         elif self._mode == self.MODE_ERROR:
-            # 红叹号
-            pen = QPen(fg, 2.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            # 红叹号（原版固定坐标）
+            pen = QPen(fg, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
-            cx = rect.center().x()
-            painter.drawLine(QPoint(cx, rect.top() + rect.height() * 0.30), QPoint(cx, rect.top() + rect.height() * 0.62))
-            painter.setBrush(fg)
+            painter.drawLine(14, 8.0, 14, 16.5)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPoint(cx, rect.top() + rect.height() * 0.78), 2.0, 2.0)
+            painter.setBrush(fg)
+            painter.drawEllipse(QRectF(12.5, 18.5, 3.0, 3.0))
         painter.end()
 
 
@@ -236,7 +260,8 @@ class Bubble(QWidget):
 
     @staticmethod
     def _elide_line(fm: QFontMetrics, text: str, max_w: int) -> str:
-        """单行截断：逐字符累积（预留一个空格宽），超宽直接截断补空格。"""
+        """单行截断（原版复刻）：逐字符累积（用省略号宽做余量），
+        超宽截断并在末尾补省略号 "…"。"""
         text = (text or "").strip()
         if not text:
             return ""
@@ -244,10 +269,10 @@ class Bubble(QWidget):
             return text
         out = ""
         for ch in text:
-            if fm.horizontalAdvance(out + ch + " ") > max_w:
+            if fm.horizontalAdvance(out + ch + "…") > max_w:
                 break
             out += ch
-        return out + " " if out else " "
+        return out + "…" if out else "…"
 
     def set_content(
         self,
@@ -286,7 +311,7 @@ class Bubble(QWidget):
         status_font.setBold(True)
         status_fm = QFontMetrics(status_font)
 
-        status_seg = " " + status_phrase if status_phrase else ""
+        status_seg = " · " + status_phrase if status_phrase else ""
         status_w = status_fm.horizontalAdvance(status_seg) if status_seg else 0
 
         # 标题：给状态短语预留宽度后单行截断（最小 30px）
@@ -307,7 +332,7 @@ class Bubble(QWidget):
         )
         if status_phrase:
             rich += (
-                f'<span style="color:{self._status_color.name()}; font-size:13px; font-weight:bold;"> {esc_status}</span>'
+                f'<span style="color:{self._status_color.name()}; font-size:13px; font-weight:bold;"> · {esc_status}</span>'
             )
         self._title_label.setStyleSheet("background: transparent;")
         self._title_label.setText(rich)

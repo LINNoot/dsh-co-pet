@@ -40,18 +40,19 @@ def main():
           f"(inner_h={inner_h})")
     check("窗口含投影边距", w1 >= inner_w + 2 * pet_app.BUBBLE_SHADOW_M and h1 >= inner_h + 2 * pet_app.BUBBLE_SHADOW_M)
 
-    # 2. 标题与短语同行（RichText 两个 span）
+    # 2. 标题与短语同行（RichText 两个 span，原版分隔符 " · "）
     rich = b._title_label.text()
     check("标题在 RichText 中", "帮我重构模块" in rich)
-    check("状态短语在同一行（空格分隔）", " 执行任务中" in rich)
+    check("状态短语同一行（· 分隔）", " · 执行任务中" in rich)
 
-    # 3. 长标题：截断（原版无省略号，直接截断）
+    # 3. 长标题：截断（原版末尾补省略号 "…"）
     b.set_content("这是一个非常非常长的任务标题用来测试省略效果是否正常工作", "等待你的输入", "", "ok")
     check("长标题不超上限", b.width() <= pet_app.BUBBLE_MAX_WIDTH + 2 * pet_app.BUBBLE_SHADOW_M, f"({b.width()})")
     fm_title = b._title_label.fontMetrics()
     title_text = b._title_label.text()
     # RichText 文本宽度不应超过可用宽度（截断保证）
-    check("标题行被截断", len(b._title) > len(b._title_label.text()) or "…" in title_text or True)
+    check("标题行被截断", "…" in title_text, f"({title_text[:40]})")
+    check("截断末尾带省略号", "…" in title_text.split("</span>")[0], f"({title_text[:40]})")
 
     # 4. 摘要：单行截断、颜色默认跟随状态色
     long_body = "第一行摘要内容比较长需要换行处理。" * 6
@@ -90,6 +91,31 @@ def main():
     b.set_content("移植桌宠", "任务完成", "全部完成，共修改 12 个文件", "ok", body_color=b.COLOR_BODY_GRAY)
     check("完成态正常渲染", "任务完成" in b._title_label.text())
     check("完成态摘要为灰色", "#8a8f98" in b._body_label.styleSheet().lower())
+
+    # 10. 状态圆圈：hover 光晕 + 点击信号（原版复刻）
+    from PySide6.QtCore import Qt, QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent, QMouseEvent
+
+    c = b.circle
+    c.set_mode(c.MODE_DONE)
+    clicks = []
+    c.clicked.connect(lambda: clicks.append(1))
+    # hover：进入后 _hovered=True 且光标为手型
+    c.enterEvent(QEnterEvent(QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)))
+    check("hover 置位", c._hovered)
+    check("hover 手型光标", c.cursor().shape() == Qt.CursorShape.PointingHandCursor)
+    c.leaveEvent(QEvent(QEvent.Type.Leave))
+    check("leave 复位 hover", not c._hovered)
+    # 点击（非隐藏态）发出 clicked
+    release = QMouseEvent(
+        QEvent.Type.MouseButtonRelease, QPointF(14, 14), Qt.LeftButton, Qt.LeftButton, Qt.KeyboardModifier.NoModifier
+    )
+    c.mouseReleaseEvent(release)
+    check("点击非隐藏态发出 clicked", len(clicks) == 1)
+    # 隐藏态点击不响应
+    c.set_mode(c.MODE_HIDDEN)
+    c.mouseReleaseEvent(release)
+    check("隐藏态点击不响应", len(clicks) == 1)
 
     print()
     if FAILURES:
