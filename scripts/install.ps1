@@ -57,6 +57,13 @@ if (-not (Test-Path $petConfig)) {
         Set-Content -Path $petConfig -Encoding UTF8
 }
 
+# 构建产物（dist/DshPet.exe）存在时自动复制到部署目录（优先使用打包版）
+$distExe = Join-Path $RepoRoot "dist\DshPet.exe"
+if (Test-Path $distExe) {
+    Copy-Item $distExe $InstallPetTo -Force
+    Write-Host "    已复制构建产物: $(Get-Item (Join-Path $InstallPetTo 'DshPet.exe') | Select-Object -ExpandProperty LastWriteTime)"
+}
+
 # 桌宠可执行文件：优先用户指定；其次已构建的 exe；否则回退 pythonw 启动
 if (-not $PetExe) {
     $built = Join-Path $InstallPetTo "DshPet.exe"
