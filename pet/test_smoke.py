@@ -42,7 +42,7 @@ def send_udp(port, event, detail="", status=None):
 
 def main():
     # ---------- pet_loader ----------
-    pets = scan_pets([HERE / "pets"])
+    pets = scan_pets([HERE])
     check("scan_pets 找到 yuexinmiao", any(p.name == "yuexinmiao-mix" for p in pets))
     pet = next((p for p in pets if p.name == "yuexinmiao-mix"), None)
     if pet is not None:

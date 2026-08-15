@@ -866,7 +866,7 @@ def main() -> int:
     if args.port is not None:
         config["port"] = args.port
 
-    pets = scan_pets([APP_PETS_ROOT, USER_PETS_ROOT / "pets"])
+    pets = scan_pets([APP_PETS_ROOT, USER_PETS_ROOT])
     pet = pick_pet(pets, config.get("pet"))
     if pet is not None:
         config["pet"] = pet.name

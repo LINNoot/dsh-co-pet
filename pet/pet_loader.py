@@ -172,24 +172,30 @@ def load_pet(pet_dir) -> Pet:
 
 
 def scan_pets(roots: Iterable[Path]) -> list[Pet]:
-    """按顺序扫描多个根目录，同名宠物以先出现的根（应用目录）优先。"""
+    """按顺序扫描多个根目录的 ``pets/`` 子目录，同名宠物以先出现的根优先。
+
+    与 Codex 版一致：每个 root 下查找 ``root/pets/<name>/``。
+    """
     pets: list[Pet] = []
     seen: set[str] = set()
     for root in roots:
         root = Path(root)
-        if not root.is_dir():
+        pets_dir = root / "pets"
+        if not pets_dir.is_dir():
             continue
-        for child in sorted(root.iterdir()):
+        for child in pets_dir.iterdir():
             if not child.is_dir():
                 continue
             try:
                 pet = load_pet(child)
             except ValueError:
                 continue
-            if pet.name in seen:
+            key = pet.name.lower()
+            if key in seen:
                 continue
-            seen.add(pet.name)
+            seen.add(key)
             pets.append(pet)
+    pets.sort(key=lambda pet: pet.name.lower())
     return pets
 
 
