@@ -664,10 +664,10 @@ class PetWidget(QWidget):
             return QIcon()
         return QIcon(frames[0])
 
-    def _build_menu(self) -> QMenu:
-        menu = QMenu(self)
-
-        pets_menu = menu.addMenu("宠物")
+    def _build_pets_menu(self, pets_menu: QMenu):
+        """构建（或重建）宠物子菜单：宠物列表 + 刷新入口。"""
+        pets_menu.clear()
+        self._pet_actions.clear()
         if self._pets:
             for pet in self._pets:
                 action = pets_menu.addAction(pet.display_name)
@@ -678,6 +678,38 @@ class PetWidget(QWidget):
         else:
             action = pets_menu.addAction("（未找到宠物包）")
             action.setEnabled(False)
+        pets_menu.addSeparator()
+        refresh_action = pets_menu.addAction("刷新宠物列表")
+        refresh_action.triggered.connect(self._refresh_pets)
+
+    def _refresh_pets(self):
+        """重新扫描宠物包并重建宠物子菜单（无需重启桌宠）。"""
+        pets = scan_pets([APP_PETS_ROOT, USER_PETS_ROOT])
+        self._pets = pets
+        if self._pet is not None and not any(p.name == self._pet.name for p in pets):
+            # 当前宠物已被移除：回退到第一个可用宠物
+            self._pet = pets[0] if pets else None
+            if self._pet is not None:
+                self._config["pet"] = self._pet.name
+                save_config(CONFIG_FILE, self._config)
+            self._build_pixmaps()
+            self._state = "idle"
+            self._frame_index = 0
+            self._resize_to_pet()
+            self.pet_changed.emit()
+            self.update()
+        actions = self._menu.actions()
+        if actions:
+            pets_menu = actions[0].menu()
+            if pets_menu is not None:
+                self._build_pets_menu(pets_menu)
+        self.refresh_checks()
+
+    def _build_menu(self) -> QMenu:
+        menu = QMenu(self)
+
+        pets_menu = menu.addMenu("宠物")
+        self._build_pets_menu(pets_menu)
 
         state_menu = menu.addMenu("状态（手动）")
         for state in STANDARD_STATES:
