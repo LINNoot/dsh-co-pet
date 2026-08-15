@@ -147,8 +147,17 @@ def load_apple_fonts(fonts_roots) -> bool:
     return loaded
 
 
+def _find_asset_path(name: str) -> Path | None:
+    """在任意根目录下查找资源文件，返回真实路径。"""
+    for root in _assets_roots:
+        p = Path(root) / name
+        if p.is_file():
+            return p
+    return None
+
+
 def _find_asset_data_uri(name: str) -> str | None:
-    """在任意根目录下查找资源文件，返回 base64 data URI（供 QSS 内嵌图标）。"""
+    """在任意根目录下查找资源文件，返回 base64 data URI（QSS 兜底用）。"""
     import base64
 
     for root in _assets_roots:
@@ -162,6 +171,37 @@ def _find_asset_data_uri(name: str) -> str | None:
     return None
 
 
+def _resolve_check_image() -> str:
+    """返回 QSS ``image:`` 可用的 check.png 引用。
+
+    Qt 样式表对 base64 data URI 支持不可靠（绿框有、对勾不渲染），
+    因此优先真实文件路径：应用目录 ``assets/check.png``（绿色使用模式
+    exe/脚本旁必须带 assets/），其次 PyInstaller 内嵌资源，最后 data URI
+    兜底（总比什么都没有好）。
+    """
+    import sys
+
+    # 1) 各根目录下的 check.png / assets/check.png（exe 旁或脚本旁）
+    for name in ("check.png", "assets/check.png"):
+        p = _find_asset_path(name)
+        if p is not None:
+            return f'url("{p.resolve().as_posix()}")'
+
+    # 2) PyInstaller onefile 内嵌资源（--add-data "assets;assets"）
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        p = Path(meipass) / "assets" / "check.png"
+        if p.is_file():
+            return f'url("{p.resolve().as_posix()}")'
+
+    # 3) data URI 兜底
+    uri = _find_asset_data_uri("check.png") or _find_asset_data_uri("assets/check.png")
+    if uri:
+        return f"url({uri})"
+
+    return "none"
+
+
 _assets_roots: list = []
 
 
@@ -172,10 +212,5 @@ def apply_codex_style(app, roots=()) -> None:
 
     load_apple_fonts(roots)
 
-    check_uri = _find_asset_data_uri("check.png")
-    if check_uri:
-        qss = CODEX_QSS.replace("__CHECK_IMAGE__", f"url({check_uri})")
-    else:
-        qss = CODEX_QSS.replace("__CHECK_IMAGE__", "none")
-
+    qss = CODEX_QSS.replace("__CHECK_IMAGE__", _resolve_check_image())
     app.setStyleSheet(qss)
