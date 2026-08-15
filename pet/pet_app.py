@@ -27,7 +27,7 @@ from typing import ClassVar
 
 from pet_loader import STANDARD_STATES, Pet, pil_to_qimage, scan_pets
 from pet_style import apply_codex_style
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -60,17 +60,19 @@ DEFAULT_CONFIG: dict = {
     "y": None,
 }
 
-BUBBLE_MAX_WIDTH = 480
-BUBBLE_PAD_X = 12
-BUBBLE_PAD_TOP = 5
-BUBBLE_PAD_BOTTOM = 5
-BUBBLE_TITLE_H = 19
-BUBBLE_GAP = 3
-BUBBLE_LINE_H = 17
-BUBBLE_SHADOW_M = 12
-BUBBLE_SHADOW_EXTRA = 4
-BUBBLE_CIRCLE_D = 28
-BUBBLE_CIRCLE_GAP = 8
+# —— 气泡排版（行业 UI 标准：层次分明、留白充足、圆角 + 柔和投影）——
+BUBBLE_MAX_WIDTH = 360          # 气泡最大宽度（px）
+BUBBLE_MIN_WIDTH = 120          # 气泡最小宽度（px）
+BUBBLE_PAD_X = 14               # 水平内边距
+BUBBLE_PAD_TOP = 10             # 上内边距
+BUBBLE_PAD_BOTTOM = 10          # 下内边距
+BUBBLE_HEAD_H = 19              # 标题/状态行行高（13px 字体）
+BUBBLE_BODY_LINE_H = 16         # 摘要行行高（12px 字体）
+BUBBLE_GAP = 4                  # 标题行与摘要行间距
+BUBBLE_BODY_MAX_LINES = 2       # 摘要最大行数
+BUBBLE_SHADOW_M = 14            # 投影外扩边距（窗口透明区域）
+BUBBLE_CIRCLE_D = 28            # 状态圆圈直径
+BUBBLE_CIRCLE_GAP = 10          # 圆圈与文字间距
 
 
 class StatusCircle(QLabel):
@@ -147,8 +149,8 @@ class StatusCircle(QLabel):
         painter.end()
 
 
-class BubbleCard(QLabel):
-    """白色胶囊气泡卡片：两端半圆，无边框。"""
+class BubbleCard(QWidget):
+    """白色圆角气泡卡片：两端半圆 + 柔和投影（由 QGraphicsDropShadowEffect 提供）。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -159,21 +161,21 @@ class BubbleCard(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(BUBBLE_SHADOW_M, BUBBLE_SHADOW_M, -BUBBLE_SHADOW_M, -BUBBLE_SHADOW_M)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 245))
-        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+        painter.setBrush(QColor(255, 255, 255, 250))
+        painter.drawRoundedRect(rect, 12, 12)
         painter.end()
 
 
 class Bubble(QWidget):
     """任务提示气泡：独立透明置顶窗口，跟随宠物同步移动。
 
-    内容结构：
-    - 第一行：标题（任务对话标题），粗体大字号近黑色；
-    - 第二行：状态提示短句（思考中/执行任务/等待你的输入等），按状态着色：
-      ok=DSH 绿 #10A37F，warn=警告黄 #FFB000，error=失败红 #F04438；
-    - 第三行（可选）：简短摘要/错误描述。
-
-    自动换行、限行截断（末尾加 …），气泡宽高跟随文本自动缩放。
+    排版（现代 UI 标准）：
+    - 白底圆角卡片（12px）+ 柔和投影，文字留白充足；
+    - 第一行：任务标题（13px 粗体，近黑）· 状态短语（13px 粗体，按状态着色：
+      ok=DSH 绿 #10A37F，warn=警告黄 #FFB000，error=失败红 #F04438）；
+      整行超宽时优雅省略（…）；
+    - 第二行（可选）：摘要/错误描述（12px 灰色 #8A8F98，最多两行省略）；
+    - 右侧状态圆圈垂直居中；宽高随内容自适应（上限 360px）。
     """
 
     COLOR_OK = QColor("#10A37F")
@@ -192,10 +194,76 @@ class Bubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._card = BubbleCard(self)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 3)
+        shadow.setColor(QColor(15, 23, 42, 45))
+        self._card.setGraphicsEffect(shadow)
+
         self._circle = StatusCircle(self)
+
+        self._phrase_color = self.COLOR_OK
+
+        self._head_label = QLabel(self)
+        self._head_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._head_label.setWordWrap(False)
+
         self._body_label = QLabel(self)
-        self._body_label.setWordWrap(True)
         self._body_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._body_label.setWordWrap(False)
+        self._body_label.setStyleSheet(
+            f"font-size:12px; color:{self.COLOR_BODY_GRAY.name()}; background: transparent;"
+        )
+
+    # ------------------------------------------------------------- 排版
+
+    def _measure_head(self, title: str, phrase: str, max_w: int):
+        """把「标题 · 短语」整行优雅省略，返回 (title_html, phrase_html)。"""
+        metrics = QFontMetrics(self.font())
+        plain = title + (" · " + phrase if phrase else "")
+        if metrics.horizontalAdvance(plain) > max_w:
+            plain = metrics.elidedText(plain, Qt.TextElideMode.ElideRight, max_w)
+        if " · " in plain:
+            t, _, p = plain.partition(" · ")
+        else:
+            t, p = plain, ""
+        title_html = (
+            f'<span style="color:{self.COLOR_TITLE.name()};font-size:13px;font-weight:600;">{html.escape(t)}</span>'
+            if t
+            else ""
+        )
+        phrase_html = (
+            f'<span style="color:{self._phrase_color.name()};font-size:13px;font-weight:600;">{html.escape(p)}</span>'
+            if p
+            else ""
+        )
+        return title_html, phrase_html
+
+    def _wrap_body(self, text: str, max_w: int, max_lines: int) -> list[str]:
+        """按宽度把正文切成最多 max_lines 行，末行超宽加 …。"""
+        fm = QFontMetrics(self._body_label.font())
+        out: list[str] = []
+        rest = text
+        for i in range(max_lines):
+            if not rest:
+                break
+            if fm.horizontalAdvance(rest) <= max_w:
+                out.append(rest)
+                break
+            if i == max_lines - 1:
+                out.append(fm.elidedText(rest, Qt.TextElideMode.ElideRight, max_w))
+                break
+            # 中间行：二分找到能放下的最长前缀
+            lo, hi = 0, len(rest)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if fm.horizontalAdvance(rest[:mid]) <= max_w:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            out.append(rest[:lo])
+            rest = rest[lo:]
+        return out
 
     def set_content(
         self,
@@ -206,57 +274,54 @@ class Bubble(QWidget):
         body_color: QColor | None = None,
     ):
         """设置气泡内容；status: ok / warn / error。"""
-        self._card.setToolTip("")
         colors = {
             "ok": self.COLOR_OK,
             "warn": self.COLOR_WARN,
             "error": self.COLOR_ERROR,
         }
-        phrase_color = colors.get(status, self.COLOR_OK)
+        self._phrase_color = colors.get(status, self.COLOR_OK)
         body_color = body_color or self.COLOR_BODY_GRAY
 
-        title_html = f'<span style="color:{self.COLOR_TITLE.name()}; font-size:13px; font-weight:bold;">{html.escape(title)}</span>'
-        phrase_html = f'<span style="color:{phrase_color.name()}; font-size:13px; font-weight:bold;">{html.escape(status_phrase)}</span>'
-        if title:
-            html_text = title_html + ' · ' + phrase_html
-        else:
-            html_text = phrase_html
-        if body:
-            html_text += f'<br><span style="color:{body_color.name()}; background: transparent;">{html.escape(body)}</span>'
-
         metrics = QFontMetrics(self.font())
-        max_w = BUBBLE_MAX_WIDTH - BUBBLE_PAD_X * 2 - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP - BUBBLE_SHADOW_M * 2
-        text_w = metrics.horizontalAdvance(html.unescape(title + status_phrase))
-        w = min(BUBBLE_MAX_WIDTH, max(BUBBLE_PAD_X * 2 + BUBBLE_SHADOW_M * 2 + BUBBLE_CIRCLE_D + BUBBLE_CIRCLE_GAP + text_w, BUBBLE_PAD_X * 2 + 80))
 
-        self._body_label.setText(html_text)
-        self._body_label.setStyleSheet("background: transparent;")
-        self._body_label.adjustSize()
-        self._body_label.setMaximumWidth(max_w)
-        self._body_label.adjustSize()
+        # 宽度：标题行文本 + 留白 + 圆圈（上限 360 / 下限 120）
+        plain_head = title + (" · " + status_phrase if status_phrase else "")
+        head_w = metrics.horizontalAdvance(plain_head)
+        w = min(
+            BUBBLE_MAX_WIDTH,
+            max(
+                BUBBLE_MIN_WIDTH,
+                head_w + BUBBLE_PAD_X * 2 + BUBBLE_CIRCLE_D + BUBBLE_CIRCLE_GAP,
+            ),
+        )
+        text_max_w = w - BUBBLE_PAD_X * 2 - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP
 
-        body_h = self._body_label.heightForWidth(max_w)
-        if body_h > BUBBLE_LINE_H * 2:
-            body_h = BUBBLE_LINE_H * 2
-        h = BUBBLE_PAD_TOP + BUBBLE_TITLE_H + BUBBLE_GAP + body_h + BUBBLE_PAD_BOTTOM + BUBBLE_SHADOW_M * 2
+        # 标题行：整体省略
+        title_html, phrase_html = self._measure_head(title, status_phrase, text_max_w)
+        self._head_label.setText(title_html + phrase_html)
+        self._head_label.setFixedSize(text_max_w, BUBBLE_HEAD_H)
+
+        # 正文：最多两行
+        body_lines: list[str] = []
+        if body:
+            body_color_html = body_color.name()
+            body_lines = self._wrap_body(body, text_max_w, BUBBLE_BODY_MAX_LINES)
+        self._body_label.setText("\n".join(body_lines))
+        body_h = len(body_lines) * BUBBLE_BODY_LINE_H
+
+        # 总高度与布局
+        h = BUBBLE_PAD_TOP + BUBBLE_HEAD_H + (BUBBLE_GAP + body_h if body_lines else 0) + BUBBLE_PAD_BOTTOM
         self.setFixedSize(w, h)
         self._card.setGeometry(0, 0, w, h)
-        self._body_label.setGeometry(
-            BUBBLE_PAD_X + BUBBLE_SHADOW_M,
-            BUBBLE_PAD_TOP + BUBBLE_SHADOW_M,
-            max_w,
-            body_h,
-        )
-        self._circle.move(w - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP - BUBBLE_SHADOW_M, BUBBLE_PAD_TOP + BUBBLE_SHADOW_M)
-
-    def _elide_line(self, text: str, max_w: int) -> str:
-        """单行截断，超长末尾加 …。"""
-        if not text:
-            return ""
-        metrics = QFontMetrics(self.font())
-        if metrics.horizontalAdvance(text) <= max_w:
-            return text
-        return metrics.elidedText(text, Qt.TextElideMode.ElideRight, max_w)
+        self._head_label.move(BUBBLE_PAD_X, BUBBLE_PAD_TOP)
+        if body_lines:
+            self._body_label.setGeometry(
+                BUBBLE_PAD_X,
+                BUBBLE_PAD_TOP + BUBBLE_HEAD_H + BUBBLE_GAP,
+                text_max_w,
+                body_h,
+            )
+        self._circle.move(w - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP, (h - BUBBLE_CIRCLE_D) // 2)
 
 
 def load_config(path) -> dict:
@@ -504,10 +569,8 @@ class PetWidget(QWidget):
             status = self._action_status
             if self._has_ai_summary:
                 body = self._ai_summary_text
-            elif self._action_text == " ":
-                body = " "
-            elif self._action_text == " ":
-                body = " "
+            elif self._action_text and self._action_text != " ":
+                body = self._action_text
             else:
                 body = ""
             if body:
@@ -600,7 +663,7 @@ class PetWidget(QWidget):
 
     def _sync_bubble_pos(self):
         visual_w = self._bubble.width() - 2 * BUBBLE_SHADOW_M
-        visual_h = self._bubble.height() - 2 * BUBBLE_SHADOW_M - BUBBLE_SHADOW_EXTRA
+        visual_h = self._bubble.height() - 2 * BUBBLE_SHADOW_M
         x = self.x() + self.width() - int(visual_w * 0.7) - BUBBLE_SHADOW_M
         y = self.y() - visual_h + 8 - BUBBLE_SHADOW_M
         self._bubble.move(x, y)
