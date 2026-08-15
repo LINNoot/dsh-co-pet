@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import sys
@@ -28,7 +27,7 @@ from typing import ClassVar
 from pet_loader import STANDARD_STATES, Pet, pil_to_qimage, scan_pets
 from pet_style import apply_codex_style
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsDropShadowEffect,
@@ -60,19 +59,20 @@ DEFAULT_CONFIG: dict = {
     "y": None,
 }
 
-# —— 气泡排版（行业 UI 标准：层次分明、留白充足、圆角 + 柔和投影）——
-BUBBLE_MAX_WIDTH = 360          # 气泡最大宽度（px）
-BUBBLE_MIN_WIDTH = 120          # 气泡最小宽度（px）
-BUBBLE_PAD_X = 14               # 水平内边距
-BUBBLE_PAD_TOP = 10             # 上内边距
-BUBBLE_PAD_BOTTOM = 10          # 下内边距
-BUBBLE_HEAD_H = 19              # 标题/状态行行高（13px 字体）
-BUBBLE_BODY_LINE_H = 16         # 摘要行行高（12px 字体）
-BUBBLE_GAP = 4                  # 标题行与摘要行间距
+# —— 气泡排版（Apple 设计语言：大留白、分层文字、大圆角、细腻投影）——
+BUBBLE_MAX_WIDTH = 340          # 气泡最大宽度（px）
+BUBBLE_MIN_WIDTH = 150          # 气泡最小宽度（px）
+BUBBLE_PAD_X = 18               # 水平内边距（宽松）
+BUBBLE_PAD_TOP = 14             # 上内边距
+BUBBLE_PAD_BOTTOM = 14          # 下内边距
+BUBBLE_TITLE_H = 22             # 标题行行高（14px 字体）
+BUBBLE_PHRASE_H = 18            # 状态短语行高（13px 字体）
+BUBBLE_BODY_LINE_H = 17         # 摘要行行高（12px 字体）
+BUBBLE_GAP = 3                  # 行间距（分层但紧凑）
 BUBBLE_BODY_MAX_LINES = 2       # 摘要最大行数
-BUBBLE_SHADOW_M = 14            # 投影外扩边距（窗口透明区域）
-BUBBLE_CIRCLE_D = 28            # 状态圆圈直径
-BUBBLE_CIRCLE_GAP = 10          # 圆圈与文字间距
+BUBBLE_SHADOW_M = 16            # 投影外扩边距（窗口透明区域）
+BUBBLE_CIRCLE_D = 26            # 状态圆圈直径
+BUBBLE_CIRCLE_GAP = 12          # 圆圈与文字间距
 
 
 class StatusCircle(QLabel):
@@ -150,7 +150,7 @@ class StatusCircle(QLabel):
 
 
 class BubbleCard(QWidget):
-    """白色圆角气泡卡片：两端半圆 + 柔和投影（由 QGraphicsDropShadowEffect 提供）。"""
+    """白色圆角气泡卡片：大圆角 + 柔和投影（由 QGraphicsDropShadowEffect 提供）。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -161,8 +161,8 @@ class BubbleCard(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(BUBBLE_SHADOW_M, BUBBLE_SHADOW_M, -BUBBLE_SHADOW_M, -BUBBLE_SHADOW_M)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 250))
-        painter.drawRoundedRect(rect, 12, 12)
+        painter.setBrush(QColor(255, 255, 255, 252))
+        painter.drawRoundedRect(rect, 14, 14)
         painter.end()
 
 
@@ -181,8 +181,8 @@ class Bubble(QWidget):
     COLOR_OK = QColor("#10A37F")
     COLOR_WARN = QColor("#FFB000")
     COLOR_ERROR = QColor("#F04438")
-    COLOR_BODY_GRAY = QColor("#8A8F98")
-    COLOR_TITLE = QColor("#1F2328")
+    COLOR_BODY_GRAY = QColor("#86868B")  # Apple 次级灰
+    COLOR_TITLE = QColor("#1D1D1F")  # Apple 墨黑
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -195,53 +195,56 @@ class Bubble(QWidget):
 
         self._card = BubbleCard(self)
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(18)
-        shadow.setOffset(0, 3)
-        shadow.setColor(QColor(15, 23, 42, 45))
+        shadow.setBlurRadius(22)  # 细腻柔和
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(15, 23, 42, 36))
         self._card.setGraphicsEffect(shadow)
 
         self._circle = StatusCircle(self)
 
+        # —— 分层字体（Apple 风格：大标题 / 副标题 / 正文）——
         self._phrase_color = self.COLOR_OK
+        self._title_font = QFont(self.font())
+        self._title_font.setPixelSize(14)
+        self._title_font.setWeight(QFont.Weight.DemiBold)
+        self._phrase_font = QFont(self.font())
+        self._phrase_font.setPixelSize(13)
+        self._phrase_font.setWeight(QFont.Weight.Medium)
+        self._body_font = QFont(self.font())
+        self._body_font.setPixelSize(12)
 
-        self._head_label = QLabel(self)
-        self._head_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self._head_label.setWordWrap(False)
+        self._title_label = QLabel(self)
+        self._title_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._title_label.setWordWrap(False)
+        self._title_label.setFont(self._title_font)
+        self._title_label.setStyleSheet(
+            f"color:{self.COLOR_TITLE.name()}; background: transparent;"
+        )
+
+        self._phrase_label = QLabel(self)
+        self._phrase_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._phrase_label.setWordWrap(False)
+        self._phrase_label.setFont(self._phrase_font)
 
         self._body_label = QLabel(self)
         self._body_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._body_label.setWordWrap(False)
+        self._body_label.setFont(self._body_font)
         self._body_label.setStyleSheet(
-            f"font-size:12px; color:{self.COLOR_BODY_GRAY.name()}; background: transparent;"
+            f"color:{self.COLOR_BODY_GRAY.name()}; background: transparent;"
         )
 
     # ------------------------------------------------------------- 排版
 
-    def _measure_head(self, title: str, phrase: str, max_w: int):
-        """把「标题 · 短语」整行优雅省略，返回 (title_html, phrase_html)。"""
-        metrics = QFontMetrics(self.font())
-        plain = title + (" · " + phrase if phrase else "")
-        if metrics.horizontalAdvance(plain) > max_w:
-            plain = metrics.elidedText(plain, Qt.TextElideMode.ElideRight, max_w)
-        if " · " in plain:
-            t, _, p = plain.partition(" · ")
-        else:
-            t, p = plain, ""
-        title_html = (
-            f'<span style="color:{self.COLOR_TITLE.name()};font-size:13px;font-weight:600;">{html.escape(t)}</span>'
-            if t
-            else ""
-        )
-        phrase_html = (
-            f'<span style="color:{self._phrase_color.name()};font-size:13px;font-weight:600;">{html.escape(p)}</span>'
-            if p
-            else ""
-        )
-        return title_html, phrase_html
+    def _elide(self, text: str, font: QFont, max_w: int) -> str:
+        fm = QFontMetrics(font)
+        if fm.horizontalAdvance(text) <= max_w:
+            return text
+        return fm.elidedText(text, Qt.TextElideMode.ElideRight, max_w)
 
     def _wrap_body(self, text: str, max_w: int, max_lines: int) -> list[str]:
         """按宽度把正文切成最多 max_lines 行，末行超宽加 …。"""
-        fm = QFontMetrics(self._body_label.font())
+        fm = QFontMetrics(self._body_font)
         out: list[str] = []
         rest = text
         for i in range(max_lines):
@@ -273,7 +276,11 @@ class Bubble(QWidget):
         status: str,
         body_color: QColor | None = None,
     ):
-        """设置气泡内容；status: ok / warn / error。"""
+        """设置气泡内容；status: ok / warn / error。
+
+        排版：标题（14px 半粗，墨黑）→ 状态短语（13px 中等，状态色）
+        → 摘要（12px，灰，最多两行），行间 3px，四周 14~18px 留白。
+        """
         colors = {
             "ok": self.COLOR_OK,
             "warn": self.COLOR_WARN,
@@ -281,46 +288,56 @@ class Bubble(QWidget):
         }
         self._phrase_color = colors.get(status, self.COLOR_OK)
         body_color = body_color or self.COLOR_BODY_GRAY
+        self._phrase_label.setStyleSheet(
+            f"color:{self._phrase_color.name()}; background: transparent;"
+        )
+        self._body_label.setStyleSheet(
+            f"color:{body_color.name()}; background: transparent;"
+        )
 
-        metrics = QFontMetrics(self.font())
-
-        # 宽度：标题行文本 + 留白 + 圆圈（上限 360 / 下限 120）
-        plain_head = title + (" · " + status_phrase if status_phrase else "")
-        head_w = metrics.horizontalAdvance(plain_head)
+        # 宽度：按最宽行（标题/短语/正文）测量，含留白与圆圈
+        fm_title = QFontMetrics(self._title_font)
+        fm_phrase = QFontMetrics(self._phrase_font)
+        fm_body = QFontMetrics(self._body_font)
+        content_w = max(
+            fm_title.horizontalAdvance(title) if title else 0,
+            fm_phrase.horizontalAdvance(status_phrase) if status_phrase else 0,
+            fm_body.horizontalAdvance(body) if body else 0,
+        )
         w = min(
             BUBBLE_MAX_WIDTH,
             max(
                 BUBBLE_MIN_WIDTH,
-                head_w + BUBBLE_PAD_X * 2 + BUBBLE_CIRCLE_D + BUBBLE_CIRCLE_GAP,
+                content_w + BUBBLE_PAD_X * 2 + BUBBLE_CIRCLE_D + BUBBLE_CIRCLE_GAP,
             ),
         )
         text_max_w = w - BUBBLE_PAD_X * 2 - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP
 
-        # 标题行：整体省略
-        title_html, phrase_html = self._measure_head(title, status_phrase, text_max_w)
-        self._head_label.setText(title_html + phrase_html)
-        self._head_label.setFixedSize(text_max_w, BUBBLE_HEAD_H)
-
-        # 正文：最多两行
-        body_lines: list[str] = []
-        if body:
-            body_color_html = body_color.name()
-            body_lines = self._wrap_body(body, text_max_w, BUBBLE_BODY_MAX_LINES)
-        self._body_label.setText("\n".join(body_lines))
+        # 各层文本（单行省略 / 两行省略）
+        title_text = self._elide(title, self._title_font, text_max_w) if title else ""
+        phrase_text = self._elide(status_phrase, self._phrase_font, text_max_w) if status_phrase else ""
+        body_lines = self._wrap_body(body, text_max_w, BUBBLE_BODY_MAX_LINES) if body else []
         body_h = len(body_lines) * BUBBLE_BODY_LINE_H
 
-        # 总高度与布局
-        h = BUBBLE_PAD_TOP + BUBBLE_HEAD_H + (BUBBLE_GAP + body_h if body_lines else 0) + BUBBLE_PAD_BOTTOM
+        # 垂直堆叠布局
+        y = BUBBLE_PAD_TOP
+        self._title_label.setText(title_text)
+        self._phrase_label.setText(phrase_text)
+        self._body_label.setText("\n".join(body_lines))
+        if title_text:
+            self._title_label.setGeometry(BUBBLE_PAD_X, y, text_max_w, BUBBLE_TITLE_H)
+            y += BUBBLE_TITLE_H + BUBBLE_GAP
+        if phrase_text:
+            self._phrase_label.setGeometry(BUBBLE_PAD_X, y, text_max_w, BUBBLE_PHRASE_H)
+            y += BUBBLE_PHRASE_H + BUBBLE_GAP
+        if body_lines:
+            self._body_label.setGeometry(BUBBLE_PAD_X, y, text_max_w, body_h)
+            y += body_h + BUBBLE_GAP
+        y -= BUBBLE_GAP
+
+        h = y + BUBBLE_PAD_BOTTOM
         self.setFixedSize(w, h)
         self._card.setGeometry(0, 0, w, h)
-        self._head_label.move(BUBBLE_PAD_X, BUBBLE_PAD_TOP)
-        if body_lines:
-            self._body_label.setGeometry(
-                BUBBLE_PAD_X,
-                BUBBLE_PAD_TOP + BUBBLE_HEAD_H + BUBBLE_GAP,
-                text_max_w,
-                body_h,
-            )
         self._circle.move(w - BUBBLE_CIRCLE_D - BUBBLE_CIRCLE_GAP, (h - BUBBLE_CIRCLE_D) // 2)
 
 
