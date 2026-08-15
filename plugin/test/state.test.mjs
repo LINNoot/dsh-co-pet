@@ -42,9 +42,15 @@ function makeHarness() {
   };
 }
 
+// 注意：必须与 DSH 真实结构一致——user/message 的 data 就是 UserMessage
+// 本身（{ role, content, source }），没有 data.message 包装层。
 const userMessage = (text) => ({
   type: "user/message",
-  data: { message: { source: { kind: "user" }, content: [{ type: "text", text }] } },
+  data: {
+    role: "user",
+    content: [{ type: "text", text }],
+    source: { kind: "user" },
+  },
 });
 const turnEnd = (kind, extra = {}) => ({
   type: "turn/end",
@@ -424,4 +430,58 @@ test("dispose 清理挂起完成信号", () => {
   state.dispose();
   h.advance(8000);
   assert.ok(!events.some((e) => e.event === "done"));
+});
+
+test("快照：onTick 输出内部状态（mode/运行集合/历史）", () => {
+  const h = makeHarness();
+  const snaps = [];
+  const { state } = h.makeState({ onSnapshot: (s) => snaps.push(s) });
+  // 初始 tick：idle
+  state.onTick();
+  assert.equal(snaps.at(-1).mode, "idle");
+  // 运行一段：工具调用 → running + history 记录
+  state.onSessionEvent({ type: "tool/call", data: { name: "edit" } });
+  state.onTick();
+  const snap = snaps.at(-1);
+  assert.equal(snap.mode, "running");
+  assert.ok(!snap.anyRunning, "无 agent/status 时 anyRunning 应为 false");
+  assert.ok(Array.isArray(snap.runningAgents) && snap.runningAgents.length === 0);
+  assert.ok(snap.history.some((e) => e.kind === "event" && e.name === "PreToolUse"));
+  assert.ok(snap.history.some((e) => e.kind === "action" && e.text === "调用 edit"));
+  assert.equal(snap.pendingComplete, false);
+});
+
+test("快照：agent/status 进入 runningAgents；完成挂起可见", () => {
+  const h = makeHarness();
+  const snaps = [];
+  const { state } = h.makeState({ onSnapshot: (s) => snaps.push(s) });
+  state.onAgentStatus("agent-1", "running");
+  state.onTick();
+  const snap = snaps.at(-1);
+  assert.ok(snap.anyRunning);
+  assert.deepEqual(snap.runningAgents, ["agent-1"]);
+  // 完成挂起
+  state.onSessionEvent(goalChange("complete", { objective: "X" }));
+  state.onTick();
+  assert.equal(snaps.at(-1).pendingComplete, true);
+  // agent 仍在 running：窗口到点后条件不满足，会重新挂起（不完成）
+  h.advance(8000);
+  state.onTick();
+  assert.equal(snaps.at(-1).pendingComplete, true, "agent 未空闲时继续等待");
+  // agent 空闲后窗口到点 → 完成
+  state.onAgentStatus("agent-1", "idle");
+  h.advance(8000);
+  state.onTick(); // 快照只在 tick 输出
+  assert.equal(snaps.at(-1).pendingComplete, false);
+  assert.equal(snaps.at(-1).mode, "waiting");
+});
+
+test("快照：历史环形缓冲上限", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  for (let i = 0; i < 60; i++) {
+    state.onSessionEvent({ type: "tool/call", data: { name: `t${i}` } });
+  }
+  assert.ok(state.history.length <= 40, `history 应 ≤40，实际 ${state.history.length}`);
+  assert.equal(state.snapshot().history.length, 20, "快照只带最近 20 条");
 });

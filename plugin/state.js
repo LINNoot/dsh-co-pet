@@ -44,9 +44,24 @@ export class PetBridgeState {
         const t = setTimeout(fn, ms);
         return () => clearTimeout(t);
       });
-    this.onEvent = opts.onEvent ?? (() => {});
-    this.onAction = opts.onAction ?? (() => {});
     this.onLog = opts.onLog ?? (() => {});
+
+    // 事件/动作历史（环形缓冲）：诊断快照用，用户复现问题时
+    // 可以从 ~/.dsh/dsh-pet-state.debug.json 直接看到插件收到了什么、发了什么。
+    this.history = [];
+    const push = (entry) => {
+      this.history.push(entry);
+      if (this.history.length > 40) this.history.shift();
+    };
+    this.onEvent = (event, detail) => {
+      push({ ts: this.now(), kind: "event", name: event, detail });
+      opts.onEvent?.(event, detail);
+    };
+    this.onAction = (text, status, kind) => {
+      push({ ts: this.now(), kind: "action", text, status });
+      opts.onAction?.(text, status, kind);
+    };
+    this.onSnapshot = opts.onSnapshot ?? (() => {});
 
     // —— 镜像状态 ——
     this.hadTurn = false; // 本轮会话是否出现过 turn
@@ -221,13 +236,15 @@ export class PetBridgeState {
         break;
       }
       case "user/message": {
-        if (data.message?.source?.kind === "user") {
+        // 注意：DSH 的 user/message 事件 data 本身就是 UserMessage
+        // （{ role, content, source }），不存在 data.message 字段。
+        if (data.source?.kind === "user") {
           this.hadTurn = true;
           this.thinking = false;
           this.completed = false;
           this._activity();
           this.mode = "running";
-          this.onEvent("UserPromptSubmit", clampDetail(firstText(data.message?.content)));
+          this.onEvent("UserPromptSubmit", clampDetail(firstText(data.content)));
           // 新指令：动作行"收到指令"并重置 AI 总结锁定（原版语义）
           this.onAction("收到指令", "ok", "action");
         }
@@ -262,9 +279,10 @@ export class PetBridgeState {
           this.onAction(detail, "ok", "action");
         } else {
           this.mode = "running";
-          const name = data.message?.content?.[0]?.name ?? data.message?.name ?? "";
-          this.onEvent("PostToolUse", name ? `工具 ${name} 完成` : "工具执行完成");
-          this.onAction(name ? `${name} 完成` : "工具执行完成", "ok", "action");
+          // ToolResultMessage.content 是 [ToolResultBlock]（无 name 字段），
+          // 工具名已在 tool/call 显示过，这里统一用通用文案。
+          this.onEvent("PostToolUse", "工具执行完成");
+          this.onAction("工具执行完成", "ok", "action");
         }
         break;
       }
@@ -370,7 +388,7 @@ export class PetBridgeState {
     }
   }
 
-  /** 周期心跳（每 5 秒）：空闲兜底。 */
+  /** 周期心跳（每 5 秒）：空闲兜底 + 状态快照输出。 */
   onTick() {
     if (this.mode === "running" || this.mode === "review") {
       if (this.now() - this.lastActivityAt > this.idleMs) {
@@ -381,6 +399,26 @@ export class PetBridgeState {
         this.onEvent("idle", "长时间无活动");
       }
     }
+    // 诊断快照：每次 tick 都输出当前内部状态（含最近事件历史），
+    // 由 index.js 写入 ~/.dsh/dsh-pet-state.debug.json。
+    this.onSnapshot(this.snapshot());
+  }
+
+  /** 当前内部状态快照（诊断用）。 */
+  snapshot() {
+    const now = this.now();
+    return {
+      ts: now,
+      mode: this.mode,
+      hadTurn: this.hadTurn,
+      completed: this.completed,
+      thinking: this.thinking,
+      anyRunning: this.anyRunning,
+      runningAgents: [...this.runningAgents],
+      lastActivityAgoMs: now - this.lastActivityAt,
+      pendingComplete: Boolean(this.pendingComplete),
+      history: this.history.slice(-20),
+    };
   }
 
   /** 插件卸载：清理定时器。 */

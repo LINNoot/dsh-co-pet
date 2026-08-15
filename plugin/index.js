@@ -14,6 +14,8 @@
 //   completionQuietMs: 8000    目标完成后的静默去抖窗口
 //   idleTimeoutMs: 90000       空闲兜底
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { PetChannel } from "./channel.js";
 import { PetBridgeState } from "./state.js";
@@ -29,6 +31,21 @@ export function apply(ctx, config = {}) {
     logger,
   });
 
+  // 诊断快照文件：插件每 5 秒把内部状态（mode/运行集合/最近事件历史）
+  // 原子写入该文件。复现"状态错乱"时查看此文件即可定位插件视角。
+  const debugStateFile = config.debugStateFile
+    ? path.resolve(config.debugStateFile.replace(/^~[\\/]?/, `${os.homedir()}/`))
+    : path.join(os.homedir(), ".dsh", "dsh-pet-state.debug.json");
+  const writeSnapshot = (snap) => {
+    try {
+      const tmp = `${debugStateFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(snap, null, 2));
+      fs.renameSync(tmp, debugStateFile);
+    } catch (err) {
+      logger.debug?.(`[dsh-pet-bridge] 快照写入失败: ${err.message}`);
+    }
+  };
+
   const bridge = new PetBridgeState({
     quietMs: config.completionQuietMs ?? 8000,
     idleMs: config.idleTimeoutMs ?? 90000,
@@ -41,6 +58,7 @@ export function apply(ctx, config = {}) {
       channel.send("action", text, status, kind);
     },
     onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
+    onSnapshot: writeSnapshot,
   });
 
   // 顶层会话判定：子代理会话 header 带 origin:'subagent' / delegationDepth
