@@ -47,14 +47,13 @@ export class PetBridgeState {
     this.onAction = opts.onAction ?? (() => {});
 
     // —— 镜像状态 ——
-    this.anyRunning = false; // 任一 agent（含子代理）正在运行
     this.hadTurn = false; // 本轮会话是否出现过 turn
     this.mode = "idle"; // idle | running | review | waiting
     this.lastActivityAt = this.now();
     this.lastIdleSentAt = 0;
     this.pendingComplete = null; // 挂起的完成信号 { cancel, detail }
     this.completed = false; // 桌宠正处于完成展示
-    this.lastAgentIdle = false; // 上一帧 agent 全空闲（避免重复发 AgentStop）
+    this.runningAgents = new Set(); // 正在运行的 agent id 集合（含子代理）
   }
 
   // ------------------------------------------------------------------ 工具
@@ -102,20 +101,28 @@ export class PetBridgeState {
     this.onEvent("SessionStart", "DSH 已启动");
   }
 
-  /** agent/status：任一 agent（含子代理）运行/空闲。 */
-  onAgentStatus(status) {
+  /**
+   * agent/status：任一 agent（含子代理）运行/空闲。
+   * @param {string} agentId agent 标识（agent.id / session id）
+   * @param {string} status 'running' | 'idle'
+   */
+  onAgentStatus(agentId, status) {
     if (status === "running") {
+      const wasIdle = this.runningAgents.size === 0;
+      this.runningAgents.add(agentId);
       this._activity();
-      if (!this.anyRunning && !this.completed) {
+      if (wasIdle && !this.completed) {
         this.onEvent("AgentStart", "任务进行中");
       }
-      this.anyRunning = true;
-      this.lastAgentIdle = false;
       return;
     }
-    // idle
-    this.anyRunning = false;
-    this.lastAgentIdle = true;
+    // idle：只移除该 agent；其他 agent 仍在运行则保持 anyRunning
+    this.runningAgents.delete(agentId);
+  }
+
+  /** 是否有任一 agent（含子代理）正在运行。 */
+  get anyRunning() {
+    return this.runningAgents.size > 0;
   }
 
   /** agent/error / turn/end(error) 等失败信号。 */
@@ -129,6 +136,9 @@ export class PetBridgeState {
   /** 会话事件（仅顶层会话；index.js 已过滤）。 */
   onSessionEvent(event) {
     const { type, data } = event;
+    // 任何会话事件都算活动信号：长推理（assistant/chunk）、子代理运行期间、
+    // 工具长调用等场景都靠它防止空闲兜底误触发（90s 无活动才回 idle）。
+    this._touch();
     switch (type) {
       case "turn/start": {
         this.hadTurn = true;

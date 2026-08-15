@@ -123,7 +123,7 @@ test("目标完成后的收尾 turn/end 不取消完成信号", () => {
   const { state, events } = h.makeState();
   state.onSessionEvent(goalChange("complete", { objective: "X" }));
   state.onSessionEvent(turnEnd("completed")); // goal 完成后的回合收尾
-  state.onAgentStatus("idle");
+  state.onAgentStatus("agent-1", "idle");
   h.advance(8000);
   assert.deepEqual(events.at(-1), { event: "done", detail: "X" });
 });
@@ -131,11 +131,11 @@ test("目标完成后的收尾 turn/end 不取消完成信号", () => {
 test("目标完成时 agent 仍在收尾 → 空闲后才确认完成", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();
-  state.onAgentStatus("running"); // 回合进行中
+  state.onAgentStatus("agent-1", "running"); // 回合进行中
   state.onSessionEvent(goalChange("complete", { objective: "X" }));
   h.advance(8000);
   assert.ok(!events.some((e) => e.event === "done"), "agent 未空闲不应触发完成");
-  state.onAgentStatus("idle"); // 收尾结束
+  state.onAgentStatus("agent-1", "idle"); // 收尾结束
   h.advance(8000);
   assert.deepEqual(events.at(-1), { event: "done", detail: "X" });
 });
@@ -164,7 +164,7 @@ test("目标完成但子代理仍在运行 → 不触发完成", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();
   state.onSessionEvent(goalChange("complete", { objective: "X" }));
-  state.onAgentStatus("running"); // 子代理活动
+  state.onAgentStatus("agent-1", "running"); // 子代理活动
   h.advance(8000);
   assert.ok(!events.some((e) => e.event === "done"));
 });
@@ -180,7 +180,7 @@ test("长时间无活动 → idle 兜底", () => {
   const h = makeHarness();
   const { state, events } = h.makeState({ idleMs: 90000 });
   state.onSessionEvent(userMessage("开始"));
-  state.onAgentStatus("idle");
+  state.onAgentStatus("agent-1", "idle");
   h.advance(95_000);
   state.onTick();
   assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
@@ -190,14 +190,77 @@ test("多轮任务：轮次间不庆祝，新消息直接继续", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();
   state.onSessionEvent(userMessage("第一轮"));
-  state.onAgentStatus("running");
+  state.onAgentStatus("agent-1", "running");
   state.onSessionEvent(turnEnd("completed"));
-  state.onAgentStatus("idle");
+  state.onAgentStatus("agent-1", "idle");
   assert.equal(events.at(-1).event, "AgentStop");
   state.onSessionEvent(userMessage("第二轮"));
   assert.equal(events.at(-1).event, "UserPromptSubmit");
   h.advance(20_000);
   assert.ok(!events.some((e) => e.event === "done"), "多轮任务中途绝不能出现完成动画");
+});
+
+test("多 agent：一个空闲不影响其他 agent 的运行状态", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.onAgentStatus("agent-1", "running"); // 主 agent
+  state.onAgentStatus("agent-2", "running"); // 子代理
+  state.onAgentStatus("agent-1", "idle"); // 主 agent 空闲（等待子代理）
+  assert.ok(state.anyRunning, "子代理仍在运行，anyRunning 必须为 true");
+  state.onAgentStatus("agent-2", "idle");
+  assert.ok(!state.anyRunning, "全部空闲后 anyRunning 为 false");
+});
+
+test("子代理长时间运行期间不触发空闲兜底", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
+  state.onAgentStatus("agent-1", "idle"); // 主 agent 等待子代理
+  state.onAgentStatus("agent-2", "running"); // 子代理在跑
+  h.advance(95_000);
+  state.onTick();
+  assert.ok(!events.some((e) => e.event === "idle"), "子代理运行中不应回 idle");
+  state.onAgentStatus("agent-2", "idle");
+  h.advance(95_000);
+  state.onTick();
+  assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
+});
+
+test("长推理（assistant/chunk）持续刷新活动时间，不触发兜底", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onAgentStatus("agent-1", "running");
+  state.onSessionEvent(userMessage("开始"));
+  for (let i = 0; i < 5; i++) {
+    h.advance(40_000);
+    state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+    state.onTick();
+  }
+  assert.ok(!events.some((e) => e.event === "idle"), "持续推理不应回 idle");
+});
+
+test("等待输入（waiting）不触发空闲兜底", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
+  state.onSessionEvent(turnEnd("completed")); // → waiting
+  state.onAgentStatus("agent-1", "idle");
+  h.advance(95_000);
+  state.onTick();
+  assert.ok(!events.some((e) => e.event === "idle"), "等待输入不应回 idle");
+});
+
+test("状态残留 running 且长时间无任何活动 → idle 兜底", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
+  state.onAgentStatus("agent-1", "idle"); // 事件流中断，mode 残留 running
+  h.advance(95_000);
+  state.onTick();
+  assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
 });
 
 test("todo 更新 → action 行", () => {

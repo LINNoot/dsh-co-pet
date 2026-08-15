@@ -42,7 +42,7 @@ export function apply(ctx, config = {}) {
 
   // 任一 agent（含子代理）状态变化
   ctx.on("agent/status", ({ agent, status }) => {
-    bridge.onAgentStatus(status);
+    bridge.onAgentStatus(agent.id, status);
   });
 
   // 会话日志事件（仅实时追加；重放/种子不触发）
