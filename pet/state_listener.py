@@ -29,7 +29,9 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 DEFAULT_PORT = 47890
 STATE_FILE = Path(os.path.expanduser("~")) / ".dsh" / "dsh-pet-state.json"
-IDLE_TIMEOUT_SECONDS = 90.0
+# 空闲兜底：插件每 30s 发送活动心跳刷新本计时器，此处留足余量
+# （原版靠 rollout 高频事件保活；DSH 插件的心跳是其等价物）
+IDLE_TIMEOUT_SECONDS = 120.0
 
 
 def _log(message: str):
@@ -197,6 +199,7 @@ class StateListener(QObject):
         if self._mode in ("running", "review"):
             if time.monotonic() - self._last_activity > IDLE_TIMEOUT_SECONDS:
                 self._mode = "idle"
+                _log(f"空闲兜底触发: mode={self._mode}, 距上次事件 {time.monotonic() - self._last_activity:.0f}s")
                 self.state_changed.emit("idle", "idle-timeout", "system")
 
     # ------------------------------------------------------------------ 外部

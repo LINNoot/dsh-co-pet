@@ -32,13 +32,34 @@ export function apply(ctx, config = {}) {
   const bridge = new PetBridgeState({
     quietMs: config.completionQuietMs ?? 8000,
     idleMs: config.idleTimeoutMs ?? 90000,
-    onEvent: (event, detail) => channel.send(event, detail),
-    onAction: (text, status) => channel.send("action", text, status),
+    onEvent: (event, detail) => {
+      logger.debug?.(`[dsh-pet-bridge] → ${event} ${detail ? `"${detail.slice(0, 40)}"` : ""}`);
+      channel.send(event, detail);
+    },
+    onAction: (text, status) => {
+      logger.debug?.(`[dsh-pet-bridge] → action ${status} "${text.slice(0, 40)}"`);
+      channel.send("action", text, status);
+    },
+    onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
   });
 
   // 顶层会话判定：子代理会话 header 带 origin:'subagent' / delegationDepth
   const isRootSession = (session) =>
     !session.header?.origin && session.header?.delegationDepth === undefined;
+
+  // 子代理会话中同样代表“有工作在发生”的活动事件（不产生状态事件）
+  const ACTIVITY_TYPES = new Set([
+    "turn/start",
+    "step/start",
+    "step/end",
+    "assistant/chunk",
+    "assistant/message",
+    "request/header",
+    "request/context",
+    "tool/call",
+    "tool/result",
+    "todo/write",
+  ]);
 
   // 任一 agent（含子代理）状态变化
   ctx.on("agent/status", ({ agent, status }) => {
@@ -49,14 +70,13 @@ export function apply(ctx, config = {}) {
   ctx.on("session/event", (session, event) => {
     if (!event?.type) return;
     const type = event.type;
-    const rootOnly = !(
-      type === "approval/asked" ||
-      type === "approval/decided" ||
-      type === "tool/call" ||
-      type === "tool/result"
-    );
-    if (rootOnly && !isRootSession(session)) return;
-    bridge.onSessionEvent({ type, data: event.data });
+    if (isRootSession(session)) {
+      bridge.onSessionEvent({ type, data: event.data });
+    } else if (ACTIVITY_TYPES.has(type)) {
+      // 子代理的活动事件：刷新活动时间与运行态，防止长任务期间
+      // 空闲兜底误触发（原版 rollout 高频事件的等价物）
+      bridge.onActivity(type);
+    }
   });
 
   // 步骤/轮次错误（agent/error 与 turn/end(error) 双保险）
@@ -71,6 +91,11 @@ export function apply(ctx, config = {}) {
   // 空闲兜底心跳
   const ticker = setInterval(() => bridge.onTick(), 5000);
   ticker.unref?.();
+
+  // 活动心跳：running/review 期间每 30 秒向桌宠发一次空事件，
+  // 刷新桌宠端 90s 空闲兜底（长推理/子代理长跑时桌面端无语义事件可收）
+  const heartbeat = setInterval(() => bridge.heartbeat(), 30000);
+  heartbeat.unref?.();
 
   // 启动：通知桌宠进入空闲
   bridge.onBoot();
@@ -95,6 +120,7 @@ export function apply(ctx, config = {}) {
 
   ctx.on("dispose", () => {
     clearInterval(ticker);
+    clearInterval(heartbeat);
     bridge.dispose();
     channel.close();
     if (petProc && !petProc.killed) {

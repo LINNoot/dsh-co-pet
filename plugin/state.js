@@ -45,6 +45,7 @@ export class PetBridgeState {
       });
     this.onEvent = opts.onEvent ?? (() => {});
     this.onAction = opts.onAction ?? (() => {});
+    this.onLog = opts.onLog ?? (() => {});
 
     // —— 镜像状态 ——
     this.hadTurn = false; // 本轮会话是否出现过 turn
@@ -133,6 +134,41 @@ export class PetBridgeState {
     this.onEvent("failed", clampDetail(message ?? "发生错误"));
   }
 
+  /**
+   * 任意会话的活动事件（含子代理）：只刷新活动时间与运行状态，
+   * 不产生任何桌宠事件。用于让长推理/子代理运行期间插件端
+   * 空闲兜底（90s）不会误触发。
+   * @param {string} type 会话事件类型（turn/start、step/start、assistant/chunk 等）
+   */
+  onActivity(type) {
+    this._touch();
+    if (
+      type === "turn/start" ||
+      type === "step/start" ||
+      type === "assistant/chunk" ||
+      type === "assistant/message" ||
+      type === "request/header"
+    ) {
+      if (this.mode !== "waiting") {
+        this.mode = "running";
+      }
+    }
+  }
+
+  /**
+   * 活动心跳（index.js 每 30 秒调用一次）：running/review 期间向桌宠
+   * 发送空 detail 的 agent_message，刷新桌宠端 90s 空闲兜底计时器——
+   * 这是原版 rollout 高频事件（token_count/reasoning 等）的 DSH 等价物。
+   * 原版桌宠靠文件轮询的密集事件保活；DSH 插件只转发语义事件，
+   * 长推理/子代理长跑时若不发心跳，桌宠端会误判空闲回 idle。
+   */
+  heartbeat() {
+    if (this.mode === "running" || this.mode === "review") {
+      this._touch();
+      this.onEvent("agent_message", "");
+    }
+  }
+
   /** 会话事件（仅顶层会话；index.js 已过滤）。 */
   onSessionEvent(event) {
     const { type, data } = event;
@@ -144,6 +180,17 @@ export class PetBridgeState {
         this.hadTurn = true;
         this._activity();
         this.completed = false;
+        this.mode = "running";
+        break;
+      }
+      case "step/start":
+      case "assistant/chunk":
+      case "assistant/message":
+      case "request/header": {
+        // 模型推理/请求期间保持运行态（防止 mode 残留导致兜底误判）
+        if (this.mode !== "waiting") {
+          this.mode = "running";
+        }
         break;
       }
       case "user/message": {
@@ -295,6 +342,9 @@ export class PetBridgeState {
     if ((this.mode === "running" || this.mode === "review") && !this.anyRunning) {
       if (this.now() - this.lastActivityAt > this.idleMs) {
         this.mode = "idle";
+        this.onLog(
+          `空闲兜底触发: mode=${this.mode}, 距上次活动 ${Math.round((this.now() - this.lastActivityAt) / 1000)}s (>${this.idleMs / 1000}s), runningAgents=${this.runningAgents.size}`,
+        );
         this.onEvent("idle", "长时间无活动");
       }
     }

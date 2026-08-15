@@ -273,6 +273,72 @@ test("todo 更新 → action 行", () => {
   assert.deepEqual(actions.at(-1), { text: "实现桥接插件", status: "ok" });
 });
 
+test("活动心跳：running 期间发空事件保活，不改变任务文本", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("长任务"));
+  state.onAgentStatus("agent-1", "running");
+  // 长时间无任何会话事件（长推理/子代理长跑），只靠心跳
+  for (let i = 0; i < 6; i++) {
+    h.advance(30_000);
+    state.heartbeat();
+    state.onTick();
+  }
+  assert.ok(!events.some((e) => e.event === "idle"), "心跳保活，不应回 idle");
+  assert.ok(events.some((e) => e.event === "agent_message" && e.detail === ""),
+    "心跳应为空 detail 的 agent_message（不污染任务文本）");
+});
+
+test("子代理活动事件（onActivity）保持运行且不产生桌宠事件", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
+  state.onAgentStatus("agent-1", "idle"); // 主 agent 等待子代理
+  // 子代理会话活动事件（index.js 路由到 onActivity）
+  for (let i = 0; i < 5; i++) {
+    h.advance(20_000);
+    state.onActivity("assistant/chunk");
+    state.onTick();
+  }
+  assert.ok(!events.some((e) => e.event === "idle"), "子代理活动期间不应回 idle");
+  const before = events.length;
+  state.onActivity("turn/start");
+  assert.equal(events.length, before, "onActivity 不产生桌宠事件");
+});
+
+test("回合开始/推理事件把 mode 置为 running（防残留导致兜底误判）", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.onSessionEvent({ type: "turn/start", data: { turn: 1 } });
+  assert.equal(state.mode, "running");
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  assert.equal(state.mode, "running");
+  state.onSessionEvent(turnEnd("completed"));
+  assert.equal(state.mode, "waiting");
+  // 收尾残留推理事件不应把 waiting 拉回 running（否则空闲兜底会误伤等待中的桌宠）
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  assert.equal(state.mode, "waiting");
+  // 新一轮开始 → running
+  state.onSessionEvent(userMessage("继续"));
+  assert.equal(state.mode, "running");
+});
+
+test("兜底触发时输出日志（onLog）", () => {
+  const h = makeHarness();
+  const logs = [];
+  const { state, events } = h.makeState({
+    idleMs: 90000,
+    onLog: (msg) => logs.push(msg),
+  });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "idle");
+  h.advance(95_000);
+  state.onTick();
+  assert.equal(events.at(-1).event, "idle");
+  assert.ok(logs.some((l) => l.includes("空闲兜底触发")), `日志应有兜底记录: ${logs.join("|")}`);
+});
+
 test("dispose 清理挂起完成信号", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();
