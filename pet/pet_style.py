@@ -147,15 +147,19 @@ def load_apple_fonts(fonts_roots) -> bool:
     return loaded
 
 
-def _find_asset(name: str):
-    """在任意根目录下查找资源文件（供 QSS 内嵌图标使用）。"""
-    from PySide6.QtGui import QPixmap
+def _find_asset_data_uri(name: str) -> str | None:
+    """在任意根目录下查找资源文件，返回 base64 data URI（供 QSS 内嵌图标）。"""
+    import base64
 
     for root in _assets_roots:
         p = Path(root) / name
         if p.is_file():
-            return QPixmap(str(p))
-    return QPixmap()
+            try:
+                data = p.read_bytes()
+            except OSError:
+                continue
+            return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+    return None
 
 
 _assets_roots: list = []
@@ -168,20 +172,9 @@ def apply_codex_style(app, roots=()) -> None:
 
     load_apple_fonts(roots)
 
-    check = _find_asset("check.png")
-    if not check.isNull():
-        import base64
-        import io
-
-        from PySide6.QtCore import QByteArray
-        from PySide6.QtGui import QPixmap
-
-        buffer = QByteArray()
-        bio = io.BytesIO()
-        check.save(bio, "PNG")
-        buffer.append(bytes(bio.getvalue()))
-        data_uri = "data:image/png;base64," + base64.b64encode(bytes(buffer)).decode("ascii")
-        qss = CODEX_QSS.replace("__CHECK_IMAGE__", f"url({data_uri})")
+    check_uri = _find_asset_data_uri("check.png")
+    if check_uri:
+        qss = CODEX_QSS.replace("__CHECK_IMAGE__", f"url({check_uri})")
     else:
         qss = CODEX_QSS.replace("__CHECK_IMAGE__", "none")
 

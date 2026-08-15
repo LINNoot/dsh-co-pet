@@ -9,10 +9,7 @@
   宠物规则播放精灵图动画，气泡展示任务进度/状态，支持拖拽、悬浮、托盘菜单。
 - **scripts/** — 安装/卸载/打包脚本。
 
-本仓库由原 Codex 桌宠移植而来：保留原版外观与交互，重写了状态检测层
-（原版绑定 Codex hooks 与 rollout JSONL，且存在“任务中途出现完成动画”、
-“AgentStop 把桌宠打回 idle”等缺陷）。
-
+本仓库以 Codex 桌宠为基板，根据更符合直觉的操作调整重构而来
 ## 快速开始
 
 ### 1. 安装插件
@@ -102,7 +99,7 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 
 ## 宠物包
 
-结构与 Codex 完全一致。**本仓库不随源码分发宠物素材**（授权通常不明确），
+结构可参考 Codex，高度兼容codex桌宠 。**本仓库不随源码分发宠物素材**（授权通常不明确），
 请放入自己的宠物包：
 
 ```text
