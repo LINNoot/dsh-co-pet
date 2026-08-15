@@ -63,6 +63,7 @@ export function apply(ctx, config = {}) {
 
   // 任一 agent（含子代理）状态变化
   ctx.on("agent/status", ({ agent, status }) => {
+    logger.debug?.(`[dsh-pet-bridge] agent/status ${agent.id} → ${status}`);
     bridge.onAgentStatus(agent.id, status);
   });
 

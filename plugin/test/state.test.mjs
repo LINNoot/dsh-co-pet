@@ -211,17 +211,20 @@ test("多 agent：一个空闲不影响其他 agent 的运行状态", () => {
   assert.ok(!state.anyRunning, "全部空闲后 anyRunning 为 false");
 });
 
-test("子代理长时间运行期间不触发空闲兜底", () => {
+test("子代理长时间运行期间不触发空闲兜底（有活动事件）", () => {
   const h = makeHarness();
   const { state, events } = h.makeState({ idleMs: 90000 });
   state.onSessionEvent(userMessage("开始"));
   state.onAgentStatus("agent-1", "running");
   state.onAgentStatus("agent-1", "idle"); // 主 agent 等待子代理
-  state.onAgentStatus("agent-2", "running"); // 子代理在跑
-  h.advance(95_000);
-  state.onTick();
-  assert.ok(!events.some((e) => e.event === "idle"), "子代理运行中不应回 idle");
-  state.onAgentStatus("agent-2", "idle");
+  state.onAgentStatus("agent-2", "running"); // 子代理在跑（真实运行会产生事件）
+  for (let i = 0; i < 5; i++) {
+    h.advance(20_000);
+    state.onActivity("assistant/chunk"); // 子代理会话活动事件
+    state.onTick();
+  }
+  assert.ok(!events.some((e) => e.event === "idle"), "子代理活动期间不应回 idle");
+  // 子代理静默（事件流中断）→ 兜底最终触发
   h.advance(95_000);
   state.onTick();
   assert.deepEqual(events.at(-1), { event: "idle", detail: "长时间无活动" });
@@ -273,20 +276,56 @@ test("todo 更新 → action 行", () => {
   assert.deepEqual(actions.at(-1), { text: "实现桥接插件", status: "ok", kind: "action" });
 });
 
-test("活动心跳：running 期间发空事件保活，不改变任务文本", () => {
+test("活动心跳：running 期间发空事件保活桌宠端", () => {
   const h = makeHarness();
   const { state, events } = h.makeState({ idleMs: 90000 });
   state.onSessionEvent(userMessage("长任务"));
   state.onAgentStatus("agent-1", "running");
-  // 长时间无任何会话事件（长推理/子代理长跑），只靠心跳
+  h.advance(30_000);
+  state.heartbeat();
+  assert.ok(events.some((e) => e.event === "agent_message" && e.detail === ""),
+    "心跳应为空 detail 的 agent_message（不污染任务文本）");
+});
+
+test("心跳不刷新插件端计时器：卡 running + 心跳持续 → 90s 兜底仍触发", () => {
+  // 核心回归：agent/status idle 事件丢失、anyRunning 卡 true 时，
+  // 心跳只保活桌宠端，插件端 90s 兜底必须仍能触发，否则任务结束后永久 running。
+  const h = makeHarness();
+  const { state, events } = h.makeState({ idleMs: 90000 });
+  state.onSessionEvent(userMessage("开始"));
+  state.onAgentStatus("agent-1", "running");
+  // agent/status idle 事件丢失（anyRunning 卡 true），无任何会话活动，只有心跳
   for (let i = 0; i < 6; i++) {
-    h.advance(30_000);
+    h.advance(20_000);
     state.heartbeat();
     state.onTick();
   }
-  assert.ok(!events.some((e) => e.event === "idle"), "心跳保活，不应回 idle");
-  assert.ok(events.some((e) => e.event === "agent_message" && e.detail === ""),
-    "心跳应为空 detail 的 agent_message（不污染任务文本）");
+  assert.ok(events.some((e) => e.event === "idle"), "卡 running 时必须能兜底回 idle");
+});
+
+test("agent 状态卡 running 但 30s 无任何活动 → 完成确认（done）", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onAgentStatus("agent-1", "running"); // 回合进行中（goal 前已在跑）
+  state.onSessionEvent(goalChange("complete", { objective: "X" }));
+  // agent/status idle 事件丢失，状态卡 running，且无任何会话活动
+  h.advance(35_000);
+  assert.deepEqual(events.at(-1), { event: "done", detail: "X" });
+});
+
+test("思考态：assistant/chunk 每段推理流只提示一次'正在思考'", () => {
+  const h = makeHarness();
+  const { state, actions } = h.makeState();
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  const thinking = actions.filter((a) => a.text === "正在思考");
+  assert.equal(thinking.length, 1, "同段推理流只提示一次");
+  // 工具调用后重新进入推理 → 再次提示
+  state.onSessionEvent({ type: "tool/call", data: { name: "edit" } });
+  state.onSessionEvent({ type: "assistant/chunk", data: { chunk: {} } });
+  const thinking2 = actions.filter((a) => a.text === "正在思考");
+  assert.equal(thinking2.length, 2, "工具后新推理流再次提示");
 });
 
 test("子代理活动事件（onActivity）保持运行且不产生桌宠事件", () => {

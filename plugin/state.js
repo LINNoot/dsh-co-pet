@@ -56,6 +56,7 @@ export class PetBridgeState {
     this.pendingComplete = null; // 挂起的完成信号 { cancel, detail }
     this.completed = false; // 桌宠正处于完成展示
     this.runningAgents = new Set(); // 正在运行的 agent id 集合（含子代理）
+    this.thinking = false; // 思考态节流：每段推理流只提示一次"正在思考"
   }
 
   // ------------------------------------------------------------------ 工具
@@ -83,13 +84,20 @@ export class PetBridgeState {
     const armedAt = this.now();
     const cancel = this.schedule(() => {
       this.pendingComplete = null;
-      if (this.now() - armedAt >= this.quietMs && !this.anyRunning) {
+      // 完成条件：静默窗口已过，且（agent 已空闲 或 更长时间内无任何实际活动）。
+      // 第二项是关键兜底：agent/status idle 事件若丢失/状态卡住（anyRunning
+      // 卡 true），只要 30s 内没有任何会话活动（chunk/工具/回合），
+      // 也判定任务完成，避免"任务结束后永久 running"。
+      const quiet = this.now() - armedAt >= this.quietMs;
+      const stallMs = Math.max(this.quietMs, 30000);
+      const noActivity = this.now() - this.lastActivityAt >= stallMs;
+      if (quiet && (!this.anyRunning || noActivity)) {
         this.completed = true;
         this.mode = "waiting";
+        this.onLog(`完成确认: anyRunning=${this.anyRunning}, 距上次活动 ${Math.round((this.now() - this.lastActivityAt) / 1000)}s`);
         this.onEvent("done", clampDetail(detail, 80));
       } else if (this.anyRunning) {
-        // 目标完成时 agent 仍在收尾（如子代理/工具仍在运行）：
-        // 等其空闲后再确认完成。
+        // agent 仍在收尾且窗口内有活动（子代理/工具仍在运行）：继续等待
         this._armComplete(detail);
       }
     }, this.quietMs);
@@ -158,14 +166,15 @@ export class PetBridgeState {
 
   /**
    * 活动心跳（index.js 每 30 秒调用一次）：running/review 期间向桌宠
-   * 发送空 detail 的 agent_message，刷新桌宠端 90s 空闲兜底计时器——
+   * 发送空 detail 的 agent_message，刷新桌宠端空闲兜底计时器——
    * 这是原版 rollout 高频事件（token_count/reasoning 等）的 DSH 等价物。
-   * 原版桌宠靠文件轮询的密集事件保活；DSH 插件只转发语义事件，
-   * 长推理/子代理长跑时若不发心跳，桌宠端会误判空闲回 idle。
+   *
+   * 注意：心跳**不刷新插件端 lastActivityAt**——插件端兜底只认真实
+   * 会话活动（chunk/工具/回合/子代理），否则"agent 状态卡 running 但
+   * 实际已无活动"时心跳会无限保活，导致任务结束后永久 running。
    */
   heartbeat() {
     if (this.mode === "running" || this.mode === "review") {
-      this._touch();
       this.onEvent("agent_message", "");
     }
   }
@@ -179,6 +188,7 @@ export class PetBridgeState {
     switch (type) {
       case "turn/start": {
         this.hadTurn = true;
+        this.thinking = false;
         this._activity();
         this.completed = false;
         this.mode = "running";
@@ -191,6 +201,11 @@ export class PetBridgeState {
         if (this.mode !== "waiting") {
           this.mode = "running";
         }
+        // 思考态动作行：每段推理流只提示一次"正在思考"（节流）
+        if (type === "assistant/chunk" && !this.thinking) {
+          this.thinking = true;
+          this.onAction("正在思考", "ok", "action");
+        }
         break;
       }
       case "assistant/message": {
@@ -198,6 +213,7 @@ export class PetBridgeState {
         if (this.mode !== "waiting") {
           this.mode = "running";
         }
+        this.thinking = false;
         const summary = firstText(data.message?.content);
         if (summary) {
           this.onAction(clampDetail(summary, 20), "ok", "summary");
@@ -207,6 +223,7 @@ export class PetBridgeState {
       case "user/message": {
         if (data.message?.source?.kind === "user") {
           this.hadTurn = true;
+          this.thinking = false;
           this.completed = false;
           this._activity();
           this.mode = "running";
@@ -217,6 +234,7 @@ export class PetBridgeState {
         break;
       }
       case "tool/call": {
+        this.thinking = false;
         this._activity();
         this.completed = false;
         this.mode = "running";
@@ -225,6 +243,7 @@ export class PetBridgeState {
         break;
       }
       case "tool/result": {
+        this.thinking = false;
         this._activity();
         this.completed = false;
         if (data.error) {
@@ -263,6 +282,7 @@ export class PetBridgeState {
           this.onEvent("idle", "已取消");
           break;
         }
+        this.thinking = false;
         // completed / blocked / max-tokens / interrupted → 等待态（不庆祝）
         this.hadTurn = true;
         // 仅刷新活动时间戳；不取消 goal 完成挂起的完成信号
@@ -352,7 +372,7 @@ export class PetBridgeState {
 
   /** 周期心跳（每 5 秒）：空闲兜底。 */
   onTick() {
-    if ((this.mode === "running" || this.mode === "review") && !this.anyRunning) {
+    if (this.mode === "running" || this.mode === "review") {
       if (this.now() - this.lastActivityAt > this.idleMs) {
         this.mode = "idle";
         this.onLog(
