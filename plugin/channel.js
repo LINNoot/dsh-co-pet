@@ -30,7 +30,9 @@ export class PetChannel {
    */
   send(event, detail = "", status = "ok") {
     const message = JSON.stringify(
-      status === "ok" ? { event, detail } : { event, detail, status },
+      status === "ok"
+        ? { src: "dsh-pet-bridge", event, detail }
+        : { src: "dsh-pet-bridge", event, detail, status },
     );
     const buf = Buffer.from(message, "utf-8");
     try {

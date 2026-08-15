@@ -15,3 +15,7 @@ pet/pets/*
 
 # 环境
 .env
+
+# 测试临时目录
+pet/.tmp_test/
+

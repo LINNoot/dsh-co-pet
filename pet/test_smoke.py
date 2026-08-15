@@ -6,17 +6,16 @@
 """
 import json
 import os
+import shutil
 import socket
 import sys
-import tempfile
-import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication, QTimer  # noqa: E402
 
-from pet_loader import load_pet, scan_pets  # noqa: E402
+from pet_loader import scan_pets  # noqa: E402
 from state_listener import StateListener  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -32,11 +31,18 @@ def check(name, cond, extra=""):
 
 
 def send_udp(port, event, detail="", status=None):
-    payload = {"event": event, "detail": detail}
+    payload = {"src": "dsh-pet-bridge", "event": event, "detail": detail}
     if status is not None:
         payload["status"] = status
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(json.dumps(payload).encode("utf-8"), ("127.0.0.1", port))
+    s.close()
+
+
+def send_udp_legacy(port, event, detail=""):
+    """模拟旧 Codex hook_notify 报文（无 src 标记）——必须被忽略。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.sendto(json.dumps({"event": event, "detail": detail}).encode("utf-8"), ("127.0.0.1", port))
     s.close()
 
 
@@ -52,42 +58,62 @@ def main():
             check(f"状态 {state} 有帧", len(pet.frames.get(state, [])) > 0)
 
     # ---------- state_listener ----------
+    # 沙箱环境下 tempfile.TemporaryDirectory 的权限重置逻辑会被拒，
+    # 手动建目录（直接 mkdir 已验证可行）
+    tmp = HERE / ".tmp_test" / f"run_{os.getpid()}"
+    tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        _run_listener(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print()
+    if FAILURES:
+        print(f"失败 {len(FAILURES)} 项: {FAILURES}")
+        return 1
+    print("全部通过")
+    return 0
+
+
+def _run_listener(tmp):
     app = QCoreApplication(sys.argv)
     port = 47991
-    with tempfile.TemporaryDirectory() as tmp:
-        state_file = Path(tmp) / "dsh-pet-state.json"
-        listener = StateListener(port=port, state_file=state_file)
+    state_file = tmp / "dsh-pet-state.json"
+    listener = StateListener(port=port, state_file=state_file)
 
-        events = []
+    events = []
 
-        def on_state(state, detail, source):
-            events.append(("state", state, detail, source))
+    def on_state(state, detail, source):
+        events.append(("state", state, detail, source))
 
-        def on_action(text, status):
-            events.append(("action", text, status))
+    def on_action(text, status):
+        events.append(("action", text, status))
 
-        listener.state_changed.connect(on_state)
-        listener.action_changed.connect(on_action)
+    listener.state_changed.connect(on_state)
+    listener.action_changed.connect(on_action)
 
-        def run():
-            send_udp(port, "SessionStart")
-            send_udp(port, "UserPromptSubmit", "帮我移植桌宠")
-            send_udp(port, "PreToolUse", "调用工具 edit")
-            send_udp(port, "patch_apply", "已修改 2 个文件")
-            send_udp(port, "AgentStop", "等待你的输入")
-            send_udp(port, "PermissionRequest", "pwsh")
-            send_udp(port, "done", "目标完成")
-            # 未知事件必须被忽略（不产生任何状态变更）
-            send_udp(port, "TotallyUnknown", "x")
-            # action 事件走 action_changed
-            send_udp(port, "action", "正在重构模块", status="ok")
-            # 状态文件通道
-            state_file.write_text(json.dumps({"event": "failed", "detail": "LLM 超时"}), encoding="utf-8")
+    def run():
+        send_udp(port, "SessionStart")
+        send_udp(port, "UserPromptSubmit", "帮我移植桌宠")
+        send_udp(port, "PreToolUse", "调用工具 edit")
+        send_udp(port, "patch_apply", "已修改 2 个文件")
+        send_udp(port, "AgentStop", "等待你的输入")
+        send_udp(port, "PermissionRequest", "pwsh")
+        send_udp(port, "done", "目标完成")
+        # 未知事件必须被忽略（不产生任何状态变更）
+        send_udp(port, "TotallyUnknown", "x")
+        # 旧 Codex hook_notify 报文（无 src）必须被忽略——防污染
+        send_udp_legacy(port, "SessionStart")
+        send_udp_legacy(port, "Stop", "旧 Codex 事件")
+        # action 事件走 action_changed
+        send_udp(port, "action", "正在重构模块", status="ok")
+        # 状态文件通道
+        state_file.write_text(json.dumps({"event": "failed", "detail": "LLM 超时"}), encoding="utf-8")
 
-        QTimer.singleShot(300, run)
-        QTimer.singleShot(2600, app.quit)
-        app.exec()
-        listener.close()
+    QTimer.singleShot(300, run)
+    QTimer.singleShot(2600, app.quit)
+    app.exec()
+    listener.close()
 
     states = [e for e in events if e[0] == "state"]
     actions = [e for e in events if e[0] == "action"]
@@ -105,16 +131,11 @@ def main():
     check("AgentStop → waiting(activity)", has_state("waiting", "等待你的输入", "activity"))
     check("PermissionRequest → jumping(once:waiting)", has_state("jumping", "once:waiting", "activity"))
     check("done → waving(once:waiting,complete)", has_state("waving", "once:waiting", "complete"))
-    check("未知事件被忽略", not has_state("idle", "x") and len(states) == 8)
+    check("未知事件被忽略", not has_state("idle", "x"))
+    # 精确校验：旧 Codex 报文（无 src）不产生任何状态（状态数仍为 8）
+    check("旧 Codex 报文不增加状态", len(states) == 8, f"({len(states)})")
     check("action → action_changed", any(a[1] == "正在重构模块" and a[2] == "ok" for a in actions))
     check("状态文件通道 → failed", has_state("failed", "once:idle", "error"))
-
-    print()
-    if FAILURES:
-        print(f"失败 {len(FAILURES)} 项: {FAILURES}")
-        return 1
-    print("全部通过")
-    return 0
 
 
 if __name__ == "__main__":

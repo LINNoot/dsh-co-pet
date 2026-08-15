@@ -94,6 +94,10 @@ class StateListener(QObject):
                 message = json.loads(data.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
                 continue
+            # 只接受 dsh-pet-bridge 插件报文：旧 Codex 桌宠的 hook_notify.exe
+            # 也往本机 UDP 发事件（端口相同），必须隔离，防止状态被污染
+            if message.get("src") != "dsh-pet-bridge":
+                continue
             event = str(message.get("event", "unknown"))
             detail = str(message.get("detail") or message.get("payload") or "")[:200]
             if event.strip().lower() == "action":
