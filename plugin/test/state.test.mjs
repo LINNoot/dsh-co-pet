@@ -403,11 +403,11 @@ test("assistant/message 无文本（纯工具回合）不发总结", () => {
   assert.equal(actions.length, before, "无文本不应发总结");
 });
 
-test("新指令重置：user/message 发空 action 行", () => {
+test("新指令：user/message 发'收到指令'动作行（原版语义）", () => {
   const h = makeHarness();
   const { state, actions } = h.makeState();
   state.onSessionEvent(userMessage("开始"));
-  assert.deepEqual(actions.at(-1), { text: " ", status: "ok", kind: "action" });
+  assert.deepEqual(actions.at(-1), { text: "收到指令", status: "ok", kind: "action" });
 });
 
 test("工具调用动作行为 kind=action（不锁定总结）", () => {

@@ -228,8 +228,8 @@ export class PetBridgeState {
           this._activity();
           this.mode = "running";
           this.onEvent("UserPromptSubmit", clampDetail(firstText(data.message?.content)));
-          // 新指令：重置 AI 总结锁定（原版 user_message 动作行清空语义）
-          this.onAction(" ", "ok", "action");
+          // 新指令：动作行"收到指令"并重置 AI 总结锁定（原版语义）
+          this.onAction("收到指令", "ok", "action");
         }
         break;
       }

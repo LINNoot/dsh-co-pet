@@ -560,7 +560,8 @@ class PetWidget(QWidget):
             return
 
         if self._completed:
-            title = self._task_text or ""
+            # 原版：标题（回退"任务完成"）+ 短语"任务完成" + AI 总结（灰）
+            title = self._task_text or "任务完成"
             phrase = "任务完成"
             status = "ok"
             body = self._ai_summary_text
@@ -573,12 +574,13 @@ class PetWidget(QWidget):
         title, phrase, body, status, body_color = "", "", "", "ok", None
 
         if self._state == "failed":
+            # 原版：标题（回退"出错"）+ 短语"发生错误" + 错误描述（红）
             title = self._task_text or "出错"
             phrase = "发生错误"
-            body = self._action_text or ""
+            body = self._action_text or "发生错误"
             status = "error"
         elif self._state == "running":
-            title = self._task_text or ""
+            title = self._task_text or "正在执行任务"
             phrase = self._status_title()
             status = self._action_status
             if self._has_ai_summary:
@@ -590,13 +592,15 @@ class PetWidget(QWidget):
             if body:
                 body_color = Bubble.COLOR_BODY_GRAY
         elif self._state == "review":
-            title = self._task_text or ""
-            phrase = "等待审阅代码变更"
-            body = ""
+            # 原版：第一行"等待你的输入"，第二行"等待审阅代码变更"
+            title = self._task_text or "等待审阅代码变更"
+            phrase = "等待你的输入"
+            body = "等待审阅代码变更"
         elif self._state == "jumping" and self._from_business:
+            # 原版：第一行"需要你的授权/等待授权确认"，第二行授权提示（黄）
             title = self._task_text or "需要你的授权"
             phrase = "等待授权确认"
-            body = self._action_text or ""
+            body = self._action_text or "等待授权确认"
             status = "warn"
         else:
             self._bubble.hide()
@@ -612,7 +616,7 @@ class PetWidget(QWidget):
 
         kind=action：动作行（工具进度等），不锁定；
         kind=summary：AI 总结行，出现后锁定显示（原版语义），
-        新指令（空动作行）时解锁。
+        新指令（空动作行或"收到指令"）时解锁。
         """
         self._action_text = text
         if status in ("ok", "warn", "error"):
@@ -624,7 +628,7 @@ class PetWidget(QWidget):
                 self._has_ai_summary = True
                 self._ai_summary_text = text
         else:  # action 行
-            if text == " ":
+            if text == " " or text == "收到指令":
                 # 新指令：重置 AI 总结锁定
                 self._has_ai_summary = False
                 self._ai_summary_text = ""
@@ -632,17 +636,14 @@ class PetWidget(QWidget):
             self._update_bubble()
 
     def _status_title(self) -> str:
-        """running 状态的第一行状态短句（· 后内容）。"""
+        """running 状态的第一行状态短句（· 后内容）。原版语义精确还原。"""
         action = self._action_text
         if action == "正在思考":
             return "思考中"
         if action == "搜索中":
-            return "搜索中"
+            return "分析代码"  # 原版如此（保留原版行为）
         if action in self.KNOWN_ACTION_WORDS:
-            return "执行任务中"
-        if action and action != " ":
-            # 工具动作等具体进度 → 执行任务中
-            return "执行任务中"
+            return "执行任务"
         return "回复中"
 
     def _mark_completed(self):
