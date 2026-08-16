@@ -4,6 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 #
 # 产出：dist/DshPet.exe（含 pets/assets/fonts 的目录需在 pet/ 下）
+# 前置：Python 3.11+（自动检测：仓库 .venv → py 启动器 → 系统 python）
 param(
     [string]$Python = ""
 )
@@ -15,8 +16,23 @@ $DistDir = Join-Path $RepoRoot "dist"
 
 if (-not $Python) {
     $venvPy = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-    if (Test-Path $venvPy) { $Python = $venvPy }
-    else { $Python = (Get-Command python.exe).Source }
+    if (Test-Path $venvPy) {
+        $Python = $venvPy
+    } else {
+        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+        if ($pyLauncher) {
+            # py 启动器：取实际解释器路径（避免 3.x 选择歧义）
+            $probe = & py -3 -c "import sys; print(sys.executable)" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $probe) { $Python = $probe.Trim() }
+        }
+        if (-not $Python) {
+            $sysPy = Get-Command python.exe -ErrorAction SilentlyContinue
+            if ($sysPy) { $Python = $sysPy.Source }
+        }
+    }
+}
+if (-not $Python -or -not (Test-Path $Python)) {
+    throw "未找到 Python 3.11+。请安装 Python（https://www.python.org/downloads/，安装时勾选 Add to PATH），或使用 GitHub Release 中的预构建 DshPet.exe（install.ps1 -PetExe 指定）。"
 }
 
 function Invoke-Native {

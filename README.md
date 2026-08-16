@@ -15,13 +15,22 @@
 
 ## 📦 安装
 
+### 前置要求
+
+| 依赖 | 说明 |
+|---|---|
+| DeepSeek Harness（`dsh web`） | 已在运行即可；插件面向 v0.1.0-rc.6 系列 |
+| Windows 10/11 | 桌宠窗口与脚本均为 Windows 优先 |
+| Python 3.11+（可选） | 仅自动构建 `DshPet.exe` 需要；也可使用 GitHub Release 的预构建 exe（`install.ps1 -PetExe <路径>`） |
+| 宠物包素材 | **必须自备**（见下文"宠物包"）——仓库不随源码分发素材 |
+
 ### 方式一：一键安装脚本（Windows）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-脚本自动完成：① 用 PyInstaller 构建 `DshPet.exe`；② 部署到 `%LOCALAPPDATA%\dsh-pet`；③ 用 `dsh plugin` 把 `dsh-pet-bridge` 装进 web profile；④ 写入 petPath 覆盖；⑤ 创建桌面快捷方式。
+脚本自动完成：① 构建 `DshPet.exe`（检测 venv → `py` 启动器 → 系统 Python，没有则报错并给出指引）；② 部署到 `%LOCALAPPDATA%\dsh-pet`；③ 注册 `dsh-pet-bridge` 到 web profile（`dsh` 命令不可用时自动改写 profile 文件）；④ 写入 petPath 覆盖；⑤ 创建桌面快捷方式。
 
 **重启 DSH（`dsh web`）后生效**，桌宠随 DSH 自动启动。
 
@@ -74,7 +83,7 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 
 ## 🐱 宠物包
 
-沿用 Codex 桌宠契约（**不随仓库分发素材**，请放入自己的宠物包）：
+沿用 Codex 桌宠契约（**不随仓库分发素材**——素材授权通常不明确，请自备）：
 
 ```text
 pets/我的宠物/
@@ -82,7 +91,13 @@ pets/我的宠物/
   spritesheet.webp  # 8 列；9 行（v1，192x208/格）或 11 行（v2）
 ```
 
+获取方式：
+- **从 Codex 桌宠导入**：把 `~/.codex/pets/<名称>/` 文件夹复制到 `pet/pets/`；
+- **Petdex 社区**：下载社区宠物包复制进去；
+- **自制**：按契约生成精灵图（8 列 × 9 行）。
+
 宠物包放 `pet/pets/`（应用目录）或 `~/.dsh/pets/`（用户目录，升级不丢）。
+**注意：`pet/pets/` 下没有宠物时，桌宠窗口将无形象可显示**——首次安装后请先放入宠物包。
 
 ## 🔌 通信协议
 

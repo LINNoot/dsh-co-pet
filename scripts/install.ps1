@@ -64,21 +64,42 @@ if (Test-Path $distExe) {
     Write-Host "    已复制构建产物: $(Get-Item (Join-Path $InstallPetTo 'DshPet.exe') | Select-Object -ExpandProperty LastWriteTime)"
 }
 
-# 桌宠可执行文件：优先用户指定；其次已构建的 exe；否则回退 pythonw 启动
+# 桌宠可执行文件：优先用户指定；其次已构建的 exe；否则自动构建（有 Python）
+# 或回退 pythonw 启动；都没有则给出清晰指引。
 if (-not $PetExe) {
     $built = Join-Path $InstallPetTo "DshPet.exe"
-    if (Test-Path $built) { $PetExe = $built }
-    else {
-        $pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
-        if (-not $pythonw) {
-            # 尝试 venv 中的 pythonw
-            $venvPw = Join-Path $RepoRoot ".venv\Scripts\pythonw.exe"
-            if (Test-Path $venvPw) { $pythonw = $venvPw }
+    if (Test-Path $built) {
+        $PetExe = $built
+    } else {
+        # 尝试自动构建（需要 Python 3.11+）
+        $buildScript = Join-Path $RepoRoot "scripts\build.ps1"
+        if (Test-Path $buildScript) {
+            Write-Host "    dist/DshPet.exe 不存在，尝试自动构建（需要 Python 3.11+）…" -ForegroundColor Yellow
+            & powershell -ExecutionPolicy Bypass -File $buildScript
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $distExe)) {
+                Copy-Item $distExe $InstallPetTo -Force
+                $PetExe = $built
+            }
         }
-        if ($pythonw) {
-            $PetExe = $pythonw
-        } else {
-            throw "未找到 pythonw.exe，请先安装 Python 3.11+ 或提供 -PetExe"
+        if (-not $PetExe) {
+            # pythonw 直启回退：venv → py 启动器 → 系统 pythonw
+            $pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+            if (-not $pythonw) {
+                $venvPw = Join-Path $RepoRoot ".venv\Scripts\pythonw.exe"
+                if (Test-Path $venvPw) { $pythonw = $venvPw }
+            }
+            if (-not $pythonw) {
+                $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+                if ($pyLauncher) {
+                    $probe = & py -3 -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))" 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $probe -and (Test-Path $probe.Trim())) { $pythonw = $probe.Trim() }
+                }
+            }
+            if ($pythonw) {
+                $PetExe = $pythonw
+            } else {
+                throw "未找到 Python 3.11+，且无预构建 DshPet.exe。请安装 Python（https://www.python.org/downloads/，勾选 Add to PATH）后重试，或使用 GitHub Release 中的预构建 exe（-PetExe 指定）。"
+            }
         }
     }
 }
