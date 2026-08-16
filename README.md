@@ -4,7 +4,8 @@
 
 - **plugin/** — DSH 桥接插件 `dsh-pet-bridge`：订阅 DSH 生命周期事件
   （`agent/status`、`session/event`、`approval/*`、`goal/change`），经状态机
-  转换为桌宠事件，通过 UDP + 状态文件推送；可随 DSH 启动自动拉起桌宠。
+  转换为桌宠事件，通过 UDP + 状态文件推送；可随 DSH 启动自动拉起桌宠；
+  **Web GUI 侧边栏底部自带桌宠开关按钮**（显示/隐藏，状态持久化）。
 - **pet/** — 桌宠应用（Python 3.11 + PySide6）：透明置顶小窗口，按 Codex
   宠物规则播放精灵图动画，气泡展示任务进度/状态，支持拖拽、悬浮、托盘菜单。
 - **scripts/** — 安装/卸载/打包脚本。

@@ -84,6 +84,8 @@ def _run_listener(tmp):
     listener = StateListener(port=port, state_file=state_file)
 
     events = []
+    vis_events = []
+    quit_count = [0]
 
     def on_state(state, detail, source):
         events.append(("state", state, detail, source))
@@ -91,8 +93,16 @@ def _run_listener(tmp):
     def on_action(text, status, kind):
         events.append(("action", text, status, kind))
 
+    def on_visibility(cmd):
+        vis_events.append(cmd)
+
+    def on_quit():
+        quit_count[0] += 1
+
     listener.state_changed.connect(on_state)
     listener.action_changed.connect(on_action)
+    listener.visibility_changed.connect(on_visibility)
+    listener.quit_requested.connect(on_quit)
 
     def run():
         send_udp(port, "SessionStart")
@@ -113,6 +123,11 @@ def _run_listener(tmp):
         send_udp(port, "action", "全部完成，共修改 12 个文件", status="ok", kind="summary")
         # 新指令重置（空 action 行）
         send_udp(port, "action", " ", status="ok", kind="action")
+        # Web 开关按钮：可见性指令（不产生动画状态事件）
+        send_udp(port, "pet/visibility", "hide")
+        send_udp(port, "pet/visibility", "show")
+        send_udp(port, "pet/visibility", "bogus")  # 非法指令：忽略
+        send_udp(port, "pet/quit")
         # 状态文件通道
         state_file.write_text(json.dumps({"event": "failed", "detail": "LLM 超时"}), encoding="utf-8")
 
@@ -143,6 +158,9 @@ def _run_listener(tmp):
     check("action → action_changed", any(a[1] == "正在重构模块" and a[2] == "ok" and a[3] == "action" for a in actions))
     check("summary → action_changed(kind=summary)", any(a[1] == "全部完成，共修改 12 个文件" and a[3] == "summary" for a in actions))
     check("新指令重置 → 空 action 行", any(a[1] == " " and a[3] == "action" for a in actions))
+    check("pet/visibility → visibility_changed(hide/show)", vis_events == ["hide", "show"], f"({vis_events})")
+    check("非法可见性指令被忽略", len(vis_events) == 2)
+    check("pet/quit → quit_requested", quit_count[0] == 1)
     check("状态文件通道 → failed", has_state("failed", "once:idle", "error"))
 
 

@@ -4,6 +4,12 @@
 // 经 PetBridgeState 状态机转换为桌宠事件，通过 UDP + 状态文件推送
 // 给桌宠应用（pet/），并可选在 DSH 启动时自动拉起桌宠。
 //
+// Web GUI 控制：
+//   - 插件自带浏览器端 client bundle（plugin/client.js），在侧边栏底部
+//     注册桌宠开关按钮（sidebar.footer.action 插槽）；
+//   - 按钮经同源 HTTP 调用本插件注册的 /pet-bridge/* 路由，控制桌宠
+//     窗口显示/隐藏（PetVisibility：持久化 + pet/visibility 事件）。
+//
 // 安装：
 //   dsh plugin --profile web add <本插件目录或包名>
 // 配置（profile 的 cordis.patch.yml 或插件 config）：
@@ -19,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { PetChannel } from "./channel.js";
 import { PetBridgeState } from "./state.js";
+import { PetVisibility } from "./visibility.js";
 
 export const name = "dsh-pet-bridge";
 
@@ -30,6 +37,13 @@ export function apply(ctx, config = {}) {
     stateFile: config.stateFile,
     logger,
   });
+
+  // 桌宠可见性（Web 开关按钮 + 持久化）
+  const visibility = new PetVisibility({
+    channel,
+    onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
+  });
+  visibility.load();
 
   // 诊断快照文件：插件每 5 秒把内部状态（mode/运行集合/最近事件历史）
   // 原子写入该文件。复现"状态错乱"时查看此文件即可定位插件视角。
@@ -121,6 +135,51 @@ export function apply(ctx, config = {}) {
   // 启动：通知桌宠进入空闲
   bridge.onBoot();
 
+  // —— Web GUI 控制路由（同源 HTTP，由 client.js 按钮调用）——
+  let petStartupTimer = null;
+  if (ctx.webServer) {
+    ctx.effect?.(
+      () =>
+        ctx.webServer.register({
+          kind: "prefix",
+          path: "/pet-bridge",
+          handler: (req, res) => {
+            const respond = (code, body) => {
+              res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify(body));
+            };
+            const url = new URL(req.url ?? "/", "http://dsh.local");
+            const p = url.pathname;
+            try {
+              if (req.method === "GET" && p === "/pet-bridge/state") {
+                respond(200, { visible: visibility.current() });
+                return;
+              }
+              if (req.method === "POST" && p === "/pet-bridge/toggle") {
+                respond(200, { visible: visibility.toggle() });
+                return;
+              }
+              if (req.method === "POST" && p === "/pet-bridge/show") {
+                respond(200, { visible: visibility.setVisible(true) });
+                return;
+              }
+              if (req.method === "POST" && p === "/pet-bridge/hide") {
+                respond(200, { visible: visibility.setVisible(false) });
+                return;
+              }
+              respond(404, { error: "not found" });
+            } catch (err) {
+              logger.warn?.(`[dsh-pet-bridge] /pet-bridge 处理失败: ${err.message}`);
+              respond(500, { error: String(err.message ?? err) });
+            }
+          },
+        }),
+      "pet-bridge: web routes",
+    );
+  } else {
+    logger.warn?.("[dsh-pet-bridge] webServer 服务不可用，Web 开关按钮将无法工作（仅 UDP 控制可用）");
+  }
+
   // —— 随 DSH 启动桌宠 ——
   let petProc = null;
   const petPath = config.petPath || process.env.DSH_PET_PATH;
@@ -137,11 +196,20 @@ export function apply(ctx, config = {}) {
     } catch (err) {
       logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
     }
+    // 上次退出时桌宠是隐藏的：桌宠进程刚启动（默认显示），稍后应用持久化状态。
+    // 延迟 2s 等桌宠完成 UDP 绑定（状态文件通道兜底，确保送达）。
+    if (!visibility.current()) {
+      petStartupTimer = setTimeout(() => {
+        visibility.setVisible(false);
+      }, 2000);
+      petStartupTimer.unref?.();
+    }
   }
 
   ctx.on("dispose", () => {
     clearInterval(ticker);
     clearInterval(heartbeat);
+    if (petStartupTimer) clearTimeout(petStartupTimer);
     bridge.dispose();
     channel.close();
     if (petProc && !petProc.killed) {

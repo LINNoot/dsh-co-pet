@@ -447,6 +447,7 @@ class PetWidget(QWidget):
         self._waiting_timer.setSingleShot(True)
         self._waiting_timer.timeout.connect(self._on_waiting_timeout)
 
+        self._visible_action = None  # _build_menu 中创建；show/hide 事件同步文案
         self._menu = self._build_menu()
 
         # 初始位置：优先配置文件，否则屏幕右下角
@@ -722,6 +723,19 @@ class PetWidget(QWidget):
         super().moveEvent(event)
         self._sync_bubble_pos()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._visible_action is not None:
+            self._visible_action.setText("隐藏桌宠")
+            self._visible_action.setChecked(False)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._bubble.hide()
+        if self._visible_action is not None:
+            self._visible_action.setText("显示桌宠")
+            self._visible_action.setChecked(True)
+
     # ------------------------------------------------------------- 手动/切换
 
     def manual_state(self, state: str):
@@ -768,6 +782,14 @@ class PetWidget(QWidget):
         self._config["show_bubble"] = enabled
         save_config(CONFIG_FILE, self._config)
         self._update_bubble()
+
+    def set_visible(self, visible: bool):
+        """Web 开关按钮/托盘：显示或隐藏桌宠窗口（不改变动画状态）。"""
+        if visible:
+            self.show()
+        else:
+            self.hide()
+            self._bubble.hide()
 
     # ------------------------------------------------------------- 托盘菜单
 
@@ -851,6 +873,10 @@ class PetWidget(QWidget):
         bubble_action.setCheckable(True)
         bubble_action.setChecked(self._show_bubble)
         bubble_action.triggered.connect(self.set_show_bubble)
+
+        self._visible_action = menu.addAction("隐藏桌宠")
+        self._visible_action.triggered.connect(lambda: self.set_visible(not self.isVisible()))
+        self._visible_action.setCheckable(True)
 
         menu.addSeparator()
         menu.addAction("退出", QApplication.quit)
@@ -1029,6 +1055,8 @@ def main() -> int:
     if listener is not None:
         listener.state_changed.connect(widget.apply_business)
         listener.action_changed.connect(widget.set_action)
+        listener.visibility_changed.connect(widget.set_visible)
+        listener.quit_requested.connect(app.quit)
 
     tray = None
     if not args.no_tray:

@@ -116,3 +116,21 @@ goal/change(complete) ──► armComplete（8s 去抖窗口）
 插件 `apply()` 时若配置了 `petPath`（或环境变量 `DSH_PET_PATH`）且
 `autoLaunch: true`，用 `child_process.spawn` 拉起桌宠；`dispose` 时终止
 自己拉起的进程。取代原版 `pet_watcher.exe`（tasklist 轮询 Codex 进程）。
+
+## Web GUI 开关按钮
+
+DSH 的 Web 界面支持客户端插件（`package.json` 声明 `dsh.client` +
+`exports["./client"]`，由 dsh-client-modules 自动发现并 serve）。
+
+- `plugin/client.js`：浏览器端 bundle，在侧边栏底部
+  （`sidebar.footer.action` 插槽）注册桌宠开关按钮；图标/文案随
+  可见性切换（暂停=可见、播放=隐藏）；
+- 按钮经同源 HTTP 调用宿主路由（`plugin/index.js` 注册于
+  `ctx.webServer`）：`GET /pet-bridge/state`、`POST /pet-bridge/toggle`
+  （另有 `/show`、`/hide`）；
+- `plugin/visibility.js`：可见性状态机——持久化到
+  `~/.dsh/dsh-pet-visibility.json`，通过 `pet/visibility` 事件
+  （UDP + 状态文件双通道）通知桌宠 show/hide；DSH 重启后自动恢复
+  上次状态（桌宠启动延迟 2s 应用）；
+- 桌宠端：`state_listener.py` 识别 `pet/visibility` → `visibility_changed`
+  信号 → `pet_app.py` 窗口显示/隐藏（托盘菜单同步，"显示/隐藏桌宠"项）。

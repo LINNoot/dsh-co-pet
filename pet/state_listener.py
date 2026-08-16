@@ -52,6 +52,8 @@ class StateListener(QObject):
 
     state_changed = Signal(str, str, str)  # (state, detail, source)
     action_changed = Signal(str, str, str)  # (text, status, kind)
+    visibility_changed = Signal(str)  # "show" | "hide"（Web 开关按钮控制窗口显隐）
+    quit_requested = Signal()  # 插件请求退出桌宠
 
     def __init__(
         self,
@@ -194,6 +196,19 @@ class StateListener(QObject):
         if key in ("idle",):
             self._mode = "idle"
             self.state_changed.emit("idle", detail, "system")
+            return
+
+        if key in ("pet/visibility", "petvisibility", "visibility"):
+            # Web GUI 开关按钮：窗口显示/隐藏（不改变动画状态）
+            cmd = detail.strip().lower()
+            if cmd in ("show", "hide"):
+                self.visibility_changed.emit(cmd)
+            else:
+                _log(f"忽略未知可见性指令: {detail!r}")
+            return
+
+        if key in ("pet/quit", "petquit", "quit"):
+            self.quit_requested.emit()
             return
 
         # 未知事件：忽略（不再重置为 idle）
