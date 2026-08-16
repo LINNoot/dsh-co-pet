@@ -45,8 +45,9 @@
 
 - **内容事件（chunk / step / tool / todo / request）只刷新活动时间 + 出气泡，
   永不改写 mode**——杜绝“推理流把状态拉回 running”掩盖真实状态的问题；
-- `agent/status idle` 到达即收状态（等待输入），**不再依赖 90s 兜底**；
-  90s 兜底降级为极端防御：触发即显式日志（暴露事件流漏洞），并用快照回溯；
+- `agent/status idle` 到达即收状态（等待输入），**不再依赖空闲兜底**；
+  空闲兜底（默认 5 分钟，`idleTimeoutMs`）降级为极端防御：触发即显式日志
+  （暴露事件流漏洞），并用快照回溯；
 - 快照：每 5s 原子写 `~/.dsh/dsh-pet-state.debug.json`（mode / gate /
   runningAgents / 最近 20 条事件历史），复现状态问题时直接查档定位。
 
@@ -93,7 +94,7 @@
 | `goal/change` create/edit/resume | `agent_message` | running |
 | `todo/write`（in_progress） | `action` | 气泡进度行 |
 | `agent/status` idle（无 turn/end） | `AgentStop` | waiting（立即反映，不等兜底） |
-| 门闩开且 90s 无活动（tick，极端防御） | `idle` | idle |
+| 门闩开且 5 分钟无活动（tick，极端防御，`idleTimeoutMs` 可配） | `idle` | idle |
 
 ## 桌宠词汇表（pet/state_listener.py）
 

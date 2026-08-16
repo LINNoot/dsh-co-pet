@@ -113,14 +113,17 @@ pets/我的宠物/
 ## 🧪 测试
 
 ```powershell
-# 插件：状态机 48 项 + 开关 8 项 + cordis 注入回归 2 项
+# 插件：状态机 48 项 + 开关 8 项 + cordis 注入回归 2 项（需要 Node 20+）
 cd plugin; node test/state.test.mjs; node test/visibility.test.mjs; node test/inject.test.mjs
+# inject 测试会自动探测 DSH 的 cordis（npx 缓存），找不到时跳过；
+# 也可用环境变量显式指定：$env:DSH_CORDIS_LIB = "<cordis 入口 index.js 路径>"
 
-# 桌宠：监听器/加载器冒烟 + 气泡/刷新/样式（无 GUI）
-.venv\Scripts\python.exe pet\test_smoke.py
-.venv\Scripts\python.exe pet\test_bubble.py
-.venv\Scripts\python.exe pet\test_refresh.py
-.venv\Scripts\python.exe pet\test_style.py
+# 桌宠：先安装依赖（一次性），再跑 4 个无 GUI 测试
+py -m pip install -r pet/requirements.txt
+py pet\test_smoke.py
+py pet\test_bubble.py
+py pet\test_refresh.py
+py pet\test_style.py
 ```
 
 ## 📁 目录结构

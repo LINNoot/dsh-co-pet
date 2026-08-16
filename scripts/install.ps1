@@ -113,6 +113,21 @@ if (-not $PetExe) {
             }
             if ($pythonw) {
                 $PetExe = $pythonw
+                # pythonw 直启：自动安装桌宠依赖（PySide6/Pillow），
+                # 避免"桌宠闪退/无响应——缺依赖"的问题。
+                $pyExe = Join-Path (Split-Path -Parent $pythonw) "python.exe"
+                if (Test-Path $pyExe) {
+                    $reqFile = Join-Path $PetDir "requirements.txt"
+                    if (Test-Path $reqFile) {
+                        Write-Host "    安装桌宠依赖（$reqFile）…" -ForegroundColor Yellow
+                        & $pyExe -m pip install --quiet -r $reqFile
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "    依赖安装完成" -ForegroundColor Green
+                        } else {
+                            Write-Host "    依赖安装失败（退出码 $LASTEXITCODE）——请手动执行: $pyExe -m pip install -r `"$reqFile`"" -ForegroundColor Yellow
+                        }
+                    }
+                }
             } else {
                 throw "未找到 Python 3.11+，且无预构建 DshPet.exe。请安装 Python（https://www.python.org/downloads/，勾选 Add to PATH）后重试，或使用 GitHub Release 中的预构建 exe（-PetExe 指定）。"
             }

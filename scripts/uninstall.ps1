@@ -68,6 +68,16 @@ if ($RemovePetDir) {
     $dir = Join-Path $env:LOCALAPPDATA "dsh-pet"
     if (Test-Path $dir) {
         Write-Step "删除桌宠目录 $dir"
+        # 先解除 pets junction（PS 5.1 的 Remove-Item -Recurse 对 junction
+        # 会递归删除其指向的目标目录——即源码 pet/pets/，宠物素材会连带被删）。
+        $petsDst = Join-Path $dir "pets"
+        if (Test-Path $petsDst) {
+            $item = Get-Item $petsDst -Force
+            if ($item.LinkType -eq "Junction") {
+                Remove-Item $petsDst -Force
+                Write-Host "    已解除 pets 链接（源码 pet/pets/ 保留）"
+            }
+        }
         Remove-Item $dir -Recurse -Force
     }
 }

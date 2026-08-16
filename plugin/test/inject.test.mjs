@@ -4,13 +4,14 @@
 //  2. /pet-bridge/* 路由真实注册；
 //  3. HTTP 处理器行为（state/toggle）。
 //
-// 依赖真实 cordis（DSH 运行时同款）：默认取本机 DSH 的 npx 缓存路径，
-// 可用环境变量 DSH_CORDIS_LIB 覆盖。
+// 依赖真实 cordis（DSH 运行时同款）：自动在 npx 缓存中探测，也可用
+// 环境变量 DSH_CORDIS_LIB 显式指定；找不到时本测试自动跳过（不失败）。
 //
 // 用法：node test/inject.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
@@ -21,22 +22,43 @@ fs.mkdirSync(TMP, { recursive: true });
 // 测试结束清理临时目录（含 .tmp_test 父目录），不残留垃圾
 process.on("exit", () => fs.rmSync(path.join(HERE, ".tmp_test"), { recursive: true, force: true }));
 
-const CORDIS_LIB =
-  process.env.DSH_CORDIS_LIB ||
-  "C:/Users/888888/AppData/Local/npm-cache/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/cordis/lib/index.js";
-
-const { Context, Service } = await import(pathToFileURL(CORDIS_LIB).href);
-
-/** 记录注册路由的假 webServer 服务。 */
-class FakeWebServer extends Service {
-  constructor(ctx) {
-    super(ctx, "webServer");
-    this.routes = [];
+/** 探测 cordis 入口：环境变量 > 本机 npx 缓存（Windows/macOS/Linux）。 */
+function findCordisLib() {
+  if (process.env.DSH_CORDIS_LIB && fs.existsSync(process.env.DSH_CORDIS_LIB)) {
+    return process.env.DSH_CORDIS_LIB;
   }
-  register(route) {
-    this.routes.push(route);
-    return () => {};
+  const roots = [];
+  if (process.platform === "win32") {
+    if (process.env.LOCALAPPDATA) roots.push(path.join(process.env.LOCALAPPDATA, "npm-cache", "_npx"));
+    if (process.env.APPDATA) roots.push(path.join(process.env.APPDATA, "npm-cache", "_npx"));
+  } else {
+    roots.push(path.join(os.homedir(), ".npm", "_npx"));
   }
+  for (const root of roots) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      continue; // 目录不存在
+    }
+    for (const dir of entries) {
+      const p = path.join(root, dir, "node_modules", "@deepseek-ai", "cordis", "lib", "index.js");
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+const CORDIS_LIB = findCordisLib();
+const SKIP_REASON = !CORDIS_LIB
+  ? "未找到 cordis 库（DSH 未安装或不在 npx 缓存；可设 DSH_CORDIS_LIB 指定入口）"
+  : false;
+let Context = null;
+let Service = null;
+if (CORDIS_LIB) {
+  const mod = await import(pathToFileURL(CORDIS_LIB).href);
+  Context = mod.Context;
+  Service = mod.Service;
 }
 
 /** 模拟 node:http 的 req/res 最小面。 */
@@ -54,7 +76,18 @@ function fakeRes() {
   return out;
 }
 
-test("带 webServer 服务时插件正常加载并注册路由", async () => {
+test("带 webServer 服务时插件正常加载并注册路由", { skip: SKIP_REASON }, async () => {
+  /** 记录注册路由的假 webServer 服务。 */
+  class FakeWebServer extends Service {
+    constructor(ctx) {
+      super(ctx, "webServer");
+      this.routes = [];
+    }
+    register(route) {
+      this.routes.push(route);
+      return () => {};
+    }
+  }
   const ctx = new Context();
   await ctx.plugin(FakeWebServer); // 先让服务就绪（否则插件 fiber 会一直等待注入）
   const plugin = await import("../index.js");
@@ -91,9 +124,8 @@ test("带 webServer 服务时插件正常加载并注册路由", async () => {
   }
 });
 
-test("未声明 inject 时访问 ctx.webServer 会抛 without inject（证明声明必要）", async () => {
+test("未声明 inject 时访问 ctx.webServer 会抛 without inject（证明声明必要）", { skip: SKIP_REASON }, async () => {
   const ctx = new Context();
-  ctx.plugin(FakeWebServer);
   const boom = () => {
     const fake = new Proxy(
       {},
