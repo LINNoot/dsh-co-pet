@@ -55,14 +55,49 @@ if (Test-Path $patchFile) {
 # ---------- 2. 移除插件（可选） ----------
 if ($RemovePlugin) {
     Write-Step "移除 dsh-pet-bridge 插件"
-    & dsh plugin --profile $Profile remove dsh-pet-bridge
-    if ($LASTEXITCODE -ne 0) { Write-Host "    dsh plugin remove 失败（退出码 $LASTEXITCODE）" -ForegroundColor Yellow }
+    $dshCmd = Get-Command dsh -ErrorAction SilentlyContinue
+    if ($dshCmd) {
+        & dsh plugin --profile $Profile remove dsh-pet-bridge
+        if ($LASTEXITCODE -ne 0) { Write-Host "    dsh plugin remove 失败（退出码 $LASTEXITCODE）" -ForegroundColor Yellow }
+    } else {
+        # dsh 命令不可用：手动从 profile 的 package.json 移除注册
+        # （与 install.ps1 的手动注册互为对称，保证新用户也能卸载）
+        Write-Host "    未找到 dsh 命令，改为手动从 profile 文件移除…" -ForegroundColor Yellow
+        $profilePkg = Join-Path $profileDir "package.json"
+        if (Test-Path $profilePkg) {
+            try {
+                $pkg = Get-Content $profilePkg -Raw -Encoding UTF8 | ConvertFrom-Json
+                $changed = $false
+                if ($pkg.dependencies.'dsh-pet-bridge') {
+                    $pkg.dependencies.PSObject.Properties.Remove('dsh-pet-bridge')
+                    $changed = $true
+                }
+                $oldBundles = @($pkg.dsh.profile.bundles)
+                $newBundles = @($oldBundles | Where-Object { $_ -ne "dsh-pet-bridge" })
+                if ($newBundles.Count -ne $oldBundles.Count) {
+                    $pkg.dsh.profile.bundles = $newBundles
+                    $changed = $true
+                }
+                if ($changed) {
+                    $pkg | ConvertTo-Json -Depth 10 | Set-Content $profilePkg -Encoding UTF8
+                    Write-Host "    已手动移除 dsh-pet-bridge 注册" -ForegroundColor Green
+                } else {
+                    Write-Host "    profile 无 dsh-pet-bridge 注册，跳过" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "    手动移除失败（$($_.Exception.Message)）——请手动编辑 $profilePkg 删除 dsh-pet-bridge 后重试" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "    未找到 profile 文件 $profilePkg —— 请手动执行：dsh plugin --profile $Profile remove dsh-pet-bridge" -ForegroundColor Yellow
+        }
+    }
 }
 
 # ---------- 3. 快捷方式 ----------
 if (-not $NoRemoveShortcut) {
     Write-Step "删除桌面快捷方式"
     $desktop = [Environment]::GetFolderPath("Desktop")
+    if ([string]::IsNullOrEmpty($desktop)) { $desktop = Join-Path $env:USERPROFILE "Desktop" }
     $lnk = Join-Path $desktop "DSH 桌宠.lnk"
     if (Test-Path $lnk) { Remove-Item $lnk -Force }
 }
@@ -76,8 +111,8 @@ if ($RemovePetDir) {
         # 会递归删除其指向的目标目录——即源码 pet/pets/，宠物素材会连带被删）。
         $petsDst = Join-Path $dir "pets"
         if (Test-Path $petsDst) {
-            $item = Get-Item $petsDst -Force
-            if ($item.LinkType -eq "Junction") {
+            $item = Get-Item $petsDst -Force -ErrorAction SilentlyContinue
+            if ($null -ne $item -and $item.LinkType -eq "Junction") {
                 Remove-Item $petsDst -Force
                 Write-Host "    已解除 pets 链接（源码 pet/pets/ 保留）"
             }
