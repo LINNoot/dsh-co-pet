@@ -19,3 +19,4 @@ pet/pets/*
 # 测试临时目录
 pet/.tmp_test/
 
+plugin/.tmp_test/
