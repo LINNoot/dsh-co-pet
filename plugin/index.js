@@ -260,6 +260,7 @@ export function apply(ctx, config = {}) {
   // 轮询执行：agent.cancel(keepInbox) 中断当前回合（保留输入消息）。
   // 注：DSH 无真正的暂停/恢复 API（goal 暂停只停自动续跑），故仅提供中断。
   const COMMAND_FILE = path.join(os.homedir(), ".dsh", "dsh-pet-command.json");
+  let lastCommandSig = null;
   const runPetCommand = (cmd) => {
     if (cmd === "interrupt") {
       const running = agentsService
@@ -292,7 +293,6 @@ export function apply(ctx, config = {}) {
     }
   }, 500);
   commandPoll.unref?.();
-  let lastCommandSig = null;
 
   // 启动：通知桌宠进入空闲
   bridge.onBoot();

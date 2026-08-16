@@ -30,6 +30,21 @@ def check(name, cond, extra=""):
         FAILURES.append(name)
 
 
+def _force_rmtree(path):
+    """删除目录树；Windows 上先清除只读属性（宠物包 说明.txt 自带 ReadOnly，
+    copytree 复制后 rmtree 会 PermissionError 导致 .tmp_test 残留）。"""
+    import stat
+
+    def _onexc(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onexc=_onexc)
+
+
 def send_udp(port, event, detail="", status=None, kind=None):
     payload = {"src": "dsh-pet-bridge", "event": event, "detail": detail}
     if status is not None:
@@ -67,7 +82,11 @@ def main():
     try:
         _run_listener(tmp)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _force_rmtree(tmp)
+        try:
+            tmp.parent.rmdir()  # 清理空壳父目录（.tmp_test）
+        except OSError:
+            pass  # 非空（并发测试占用）则保留
 
     print()
     if FAILURES:

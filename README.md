@@ -23,7 +23,7 @@
 | DeepSeek Harness（`dsh web`） | 已在运行即可；插件面向 v0.1.0-rc.6 系列 |
 | Windows 10/11 | 桌宠窗口与脚本均为 Windows 优先 |
 | Python 3.11+（可选） | 仅自动构建 `DshPet.exe` 需要；也可使用 GitHub Release 的预构建 exe（`install.ps1 -PetExe <路径>`） |
-| 宠物包素材 | **必须自备**（见下文"宠物包"）——仓库不随源码分发素材 |
+| 宠物包素材 | 自带 `yuexinmiao`（月薪喵），可自定义（见下文"宠物包"）；其余素材需自备 |
 
 ### 方式一：一键安装脚本（Windows）
 
@@ -99,7 +99,7 @@ pets/我的宠物/
 - **Petdex 社区**：下载社区宠物包复制进去；
 - **自制**：按契约生成精灵图（8 列 × 9 行）。
 
-宠物包放 `pet/pets/`（应用目录）或 `~/.dsh/pets/`（用户目录，升级不丢）。
+宠物包放 `pet/pets/`（桌宠部署目录，junction 指向源码 `pet/pets/`）。
 **注意：`pet/pets/` 下没有宠物时，桌宠窗口将无形象可显示**。
 
 ## 🔌 通信协议
@@ -113,12 +113,14 @@ pets/我的宠物/
 ## 🧪 测试
 
 ```powershell
-# 插件：状态机 43 项 + 开关 8 项 + cordis 注入回归 2 项
+# 插件：状态机 48 项 + 开关 8 项 + cordis 注入回归 2 项
 cd plugin; node test/state.test.mjs; node test/visibility.test.mjs; node test/inject.test.mjs
 
-# 桌宠：监听器/加载器冒烟 + 气泡排版（无 GUI）
+# 桌宠：监听器/加载器冒烟 + 气泡/刷新/样式（无 GUI）
 .venv\Scripts\python.exe pet\test_smoke.py
 .venv\Scripts\python.exe pet\test_bubble.py
+.venv\Scripts\python.exe pet\test_refresh.py
+.venv\Scripts\python.exe pet\test_style.py
 ```
 
 ## 📁 目录结构
@@ -132,14 +134,14 @@ dsh-pet/
 │  ├─ channel.js      # UDP + 状态文件双通道
 │  ├─ client.js       # 浏览器端：侧边栏电源开关按钮（__ModuleLoader__ bundle）
 │  ├─ cordis.patch.yml
-│  └─ test/           # 插件单测（state 46 / visibility 8 / inject 2）
+│  └─ test/           # 插件单测（state 48 / visibility 8 / inject 2）
 ├─ pet/               # 桌宠应用（Python 3.11 + PySide6）
 │  ├─ pet_app.py      # 主窗口/动画/气泡/托盘/单实例锁
 │  ├─ state_listener.py  # 事件监听（UDP+文件）、词汇表、日志落盘
 │  ├─ pet_loader.py   # 宠物包扫描与精灵图加载
 │  ├─ pet_style.py    # Codex 样式与 QSS
 │  ├─ test_*.py       # 冒烟 / 气泡 / 刷新 / 样式测试（无 GUI）
-│  └─ pets/           # 宠物包（不随仓库分发）
+│  └─ pets/           # 宠物包（yuexinmiao 随仓库分发）
 ├─ scripts/           # install / uninstall / build / e2e_feed
 └─ docs/architecture.md
 ```

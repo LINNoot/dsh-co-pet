@@ -9,6 +9,8 @@ import { PetVisibility } from "../visibility.js";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TMP = path.join(HERE, ".tmp_test", `run_${process.pid}`);
 fs.mkdirSync(TMP, { recursive: true });
+// 测试结束清理临时目录（含 .tmp_test 父目录），不残留垃圾
+process.on("exit", () => fs.rmSync(path.join(HERE, ".tmp_test"), { recursive: true, force: true }));
 
 function makeVis({ file, initial, spawn } = {}) {
   const sent = [];

@@ -82,7 +82,6 @@ export class PetBridgeState {
     this.gateRunning = false; // 运行门闩：由 agent/status 开合（turn/start 兜底开）
     this.gateSource = null; // 门闩最近一次变迁来源（诊断）
     this.lastActivityAt = this.now();
-    this.lastIdleSentAt = 0;
     this.pendingComplete = null; // 挂起的完成信号 { cancel, detail }
     this.completed = false; // 桌宠正处于完成展示
     this.runningAgents = new Set(); // 正在运行的 agent id 集合（含子代理）

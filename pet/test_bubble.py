@@ -10,7 +10,6 @@ import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QFontMetrics  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import pet_app  # noqa: E402

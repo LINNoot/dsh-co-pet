@@ -62,10 +62,6 @@ class Pet:
     cell_h: int
     rows: list[str]
     frames: dict[str, list[Image.Image]] = field(default_factory=dict)
-    frame_duration_ms: int = 100
-
-    def state_rows(self) -> list[str]:
-        return self.rows
 
 
 def _find_sheet(pet_dir: Path) -> Path | None:

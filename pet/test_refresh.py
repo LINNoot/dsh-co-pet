@@ -28,6 +28,21 @@ def check(name, cond, extra=""):
         FAILURES.append(name)
 
 
+def _force_rmtree(path):
+    """删除目录树；Windows 上先清除只读属性（宠物包 说明.txt 自带 ReadOnly，
+    copytree 复制后 rmtree 会 PermissionError 导致 .tmp_test 残留）。"""
+    import stat
+
+    def _onexc(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onexc=_onexc)
+
+
 def main():
     app = QApplication(sys.argv)
 
@@ -38,7 +53,11 @@ def main():
     try:
         _run_case(tmp)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _force_rmtree(tmp)
+        try:
+            tmp.parent.rmdir()  # 清理空壳父目录（.tmp_test）
+        except OSError:
+            pass  # 非空（并发测试占用）则保留
 
     print()
     if FAILURES:
@@ -125,13 +144,13 @@ def _run_case(tmp):
     check("当前宠物未丢失", widget._pet is not None and widget._pet.name == "yuexinmiao")
 
     # 删除当前宠物 → 回退到第一个
-    shutil.rmtree(pets_root / "yuexinmiao", ignore_errors=True)
+    _force_rmtree(pets_root / "yuexinmiao")
     widget._refresh_pets()
     check("删除当前宠物后回退", widget._pet is not None and widget._pet.name != "yuexinmiao")
     check("回退后菜单 = 1", len(widget._pet_actions) == 1)
 
     # 全部删除 → 无宠物
-    shutil.rmtree(new_dir, ignore_errors=True)
+    _force_rmtree(new_dir)
     widget._refresh_pets()
     check("全部删除后无宠物", len(widget._pets) == 0 and len(widget._pet_actions) == 0)
 
