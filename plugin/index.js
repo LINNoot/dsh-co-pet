@@ -28,6 +28,13 @@ import { PetBridgeState } from "./state.js";
 import { PetVisibility } from "./visibility.js";
 
 export const name = "dsh-pet-bridge";
+// Cordis 4 服务依赖声明（模块级导出 = plugin.inject，loader 经
+// Inject.resolve 解析进 fiber）：访问 ctx.webServer 前必须声明，
+// 否则 cordis 的 ctx 代理会抛 "cannot get property without inject"，
+// 且插件加载失败会拖垮整个 DSH（plugin tree failed to load）。
+// 注意：这是硬依赖——若运行在无 webServer 服务的 profile（如纯
+// headless），插件会加载失败；web/桌面 GUI profile 均自带该服务。
+export const inject = ["webServer"];
 
 export function apply(ctx, config = {}) {
   const logger = ctx.logger ?? console;
@@ -136,44 +143,53 @@ export function apply(ctx, config = {}) {
   bridge.onBoot();
 
   // —— Web GUI 控制路由（同源 HTTP，由 client.js 按钮调用）——
+  // inject 已声明 webServer（见文件头），此处防御性判断保留：即使将来
+  // 有人把 inject 改为可选，也能降级为仅 UDP 控制而不至于加载失败。
   let petStartupTimer = null;
   if (ctx.webServer) {
     ctx.effect?.(
-      () =>
-        ctx.webServer.register({
-          kind: "prefix",
-          path: "/pet-bridge",
-          handler: (req, res) => {
-            const respond = (code, body) => {
-              res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
-              res.end(JSON.stringify(body));
-            };
-            const url = new URL(req.url ?? "/", "http://dsh.local");
-            const p = url.pathname;
-            try {
-              if (req.method === "GET" && p === "/pet-bridge/state") {
-                respond(200, { visible: visibility.current() });
-                return;
+      () => {
+        // 注册失败（路由冲突等）只告警，绝不让插件加载失败拖垮 DSH。
+        try {
+          return ctx.webServer.register({
+            kind: "prefix",
+            path: "/pet-bridge",
+            handler: (req, res) => {
+              const respond = (code, body) => {
+                res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+                res.end(JSON.stringify(body));
+              };
+              const url = new URL(req.url ?? "/", "http://dsh.local");
+              const p = url.pathname;
+              try {
+                if (req.method === "GET" && p === "/pet-bridge/state") {
+                  respond(200, { visible: visibility.current() });
+                  return;
+                }
+                if (req.method === "POST" && p === "/pet-bridge/toggle") {
+                  respond(200, { visible: visibility.toggle() });
+                  return;
+                }
+                if (req.method === "POST" && p === "/pet-bridge/show") {
+                  respond(200, { visible: visibility.setVisible(true) });
+                  return;
+                }
+                if (req.method === "POST" && p === "/pet-bridge/hide") {
+                  respond(200, { visible: visibility.setVisible(false) });
+                  return;
+                }
+                respond(404, { error: "not found" });
+              } catch (err) {
+                logger.warn?.(`[dsh-pet-bridge] /pet-bridge 处理失败: ${err.message}`);
+                respond(500, { error: String(err.message ?? err) });
               }
-              if (req.method === "POST" && p === "/pet-bridge/toggle") {
-                respond(200, { visible: visibility.toggle() });
-                return;
-              }
-              if (req.method === "POST" && p === "/pet-bridge/show") {
-                respond(200, { visible: visibility.setVisible(true) });
-                return;
-              }
-              if (req.method === "POST" && p === "/pet-bridge/hide") {
-                respond(200, { visible: visibility.setVisible(false) });
-                return;
-              }
-              respond(404, { error: "not found" });
-            } catch (err) {
-              logger.warn?.(`[dsh-pet-bridge] /pet-bridge 处理失败: ${err.message}`);
-              respond(500, { error: String(err.message ?? err) });
-            }
-          },
-        }),
+            },
+          });
+        } catch (err) {
+          logger.warn?.(`[dsh-pet-bridge] webServer 路由注册失败: ${err.message}`);
+          return () => {};
+        }
+      },
       "pet-bridge: web routes",
     );
   } else {
@@ -206,18 +222,24 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  ctx.on("dispose", () => {
-    clearInterval(ticker);
-    clearInterval(heartbeat);
-    if (petStartupTimer) clearTimeout(petStartupTimer);
-    bridge.dispose();
-    channel.close();
-    if (petProc && !petProc.killed) {
-      try {
-        petProc.kill();
-      } catch {
-        // 忽略
+  // 清理：cordis 4 没有 "dispose" 事件——插件卸载清理必须用 ctx.effect
+  // 注册 disposer（ctx.on("dispose") 永远不会触发，会导致 UDP socket/
+  // 定时器/桌宠进程在热卸载时泄漏）。
+  ctx.effect(
+    () => () => {
+      clearInterval(ticker);
+      clearInterval(heartbeat);
+      if (petStartupTimer) clearTimeout(petStartupTimer);
+      bridge.dispose();
+      channel.close();
+      if (petProc && !petProc.killed) {
+        try {
+          petProc.kill();
+        } catch {
+          // 忽略
+        }
       }
-    }
-  });
+    },
+    "pet-bridge: cleanup",
+  );
 }
