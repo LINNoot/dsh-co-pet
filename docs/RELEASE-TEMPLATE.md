@@ -74,7 +74,7 @@ dsh plugin --profile web add <仓库路径>/plugin
 
 - 桌宠窗口与脚本为 **Windows 优先**（Linux/macOS 未做适配工作，后续会跟进，暂时不确定效果）
 - 中断功能为"停当前回合"（DSH 无 agent 级暂停/恢复 API，中断后保留输入消息，可再发消息继续）
-- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）（可以丢给 AI 修复 :D
+- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）（可以丢给 AI 修复 :D）
 
 ### 📜 License
 
