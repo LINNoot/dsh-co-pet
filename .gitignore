@@ -9,11 +9,11 @@ dist/
 # 桌宠运行时
 pet/pet_config.json
 
-# 宠物素材：仅随仓库分发 yuexin（月薪喵，来自 codex-pet.org 开源社区）；
+# 宠物素材：仅随仓库分发 yuexinmiao（月薪喵，来自 codex-pet.org 开源社区）；
 # 其余素材授权不明，请放入自己的宠物包
 pet/pets/*
 !pet/pets/README.md
-!pet/pets/yuexin/
+!pet/pets/yuexinmiao/
 
 # 环境
 .env
