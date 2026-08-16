@@ -75,17 +75,17 @@ def _run_case(tmp):
     widget.set_state("running", "任务进行中")
     check("running 显示气泡", widget._bubble.isVisible())
 
-    # 暂停圆圈：hover 显示灰方块、暂停后显示恢复三角、非 hover 隐藏
+    # 中断圆圈：hover 显示灰方块、非 hover 隐藏、中断后不再显示
     widget._bubble._hovered = False
     widget._refresh_circle_business()
     check("非 hover 圆圈隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
     widget._bubble._hovered = True
     widget._refresh_circle_business()
-    check("hover 显示暂停圆圈", widget._circle.mode() == pet_app.StatusCircle.MODE_PAUSE)
-    widget._paused = True
+    check("hover 显示中断圆圈", widget._circle.mode() == pet_app.StatusCircle.MODE_INTERRUPT)
+    widget._interrupted = True
     widget._refresh_circle_business()
-    check("暂停后 hover 显示恢复圆圈", widget._circle.mode() == pet_app.StatusCircle.MODE_RESUME)
-    widget._paused = False
+    check("中断后圆圈不再显示", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
+    widget._interrupted = False
     widget._bubble._hovered = False
     widget._refresh_circle_business()
     check("恢复后非 hover 再隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)

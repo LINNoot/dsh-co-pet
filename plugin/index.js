@@ -255,56 +255,26 @@ export function apply(ctx, config = {}) {
   const heartbeat = setInterval(() => bridge.heartbeat(), 30000);
   heartbeat.unref?.();
 
-  // —— 桌宠用户命令（暂停/恢复）——
-  // 桌宠点击气泡右侧暂停圆圈 → 写 ~/.dsh/dsh-pet-command.json → 本插件
-  // 轮询执行：有 active goal 用 goals.pause/resume（真正暂停，可恢复）；
-  // 无 goal 用 agent.cancel(keepInbox) 停当前回合（保留输入消息）。
+  // —— 桌宠用户命令（中断任务）——
+  // 桌宠点击气泡右侧中断圆圈 → 写 ~/.dsh/dsh-pet-command.json → 本插件
+  // 轮询执行：agent.cancel(keepInbox) 中断当前回合（保留输入消息）。
+  // 注：DSH 无真正的暂停/恢复 API（goal 暂停只停自动续跑），故仅提供中断。
   const COMMAND_FILE = path.join(os.homedir(), ".dsh", "dsh-pet-command.json");
-  let goalService = null;
-  try {
-    goalService = ctx.get("goals");
-  } catch {
-    goalService = null;
-  }
   const runPetCommand = (cmd) => {
-    if (cmd === "pause") {
+    if (cmd === "interrupt") {
       const running = agentsService
         ?.list?.()
         ?.find((a) => a?.status === "running");
       if (!running) {
-        logger.info?.("[dsh-pet-bridge] 暂停命令：无运行中的 agent，忽略");
+        logger.info?.("[dsh-pet-bridge] 中断命令：无运行中的 agent，忽略");
         return;
       }
-      try {
-        const view = goalService?.get?.(running);
-        if (view && view.phase === "active") {
-          goalService.pause(running, { id: view.id, revision: view.revision });
-          logger.info?.("[dsh-pet-bridge] 已暂停目标（goal）");
-        }
-      } catch (err) {
-        logger.warn?.(`[dsh-pet-bridge] goal 暂停失败: ${err.message}`);
-      }
-      // 立即停当前回合（保留 inbox 输入，近似暂停；goal 暂停后不再自动续跑）
       try {
         running.cancel?.({ kind: "user" }, { keepInbox: true });
         logger.info?.("[dsh-pet-bridge] 已中断当前回合（保留输入）");
       } catch (err) {
         logger.warn?.(`[dsh-pet-bridge] 回合中断失败: ${err.message}`);
       }
-    } else if (cmd === "resume") {
-      const agent = agentsService?.list?.()?.[0];
-      if (agent) {
-        try {
-          const view = goalService?.get?.(agent);
-          if (view && view.phase === "paused") {
-            goalService.resume(agent, { id: view.id, revision: view.revision });
-            logger.info?.("[dsh-pet-bridge] 已恢复目标（goal）");
-          }
-        } catch (err) {
-          logger.warn?.(`[dsh-pet-bridge] goal 恢复失败: ${err.message}`);
-        }
-      }
-      logger.info?.("[dsh-pet-bridge] 恢复命令已处理（发送消息继续任务）");
     }
   };
   const commandPoll = setInterval(() => {

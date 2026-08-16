@@ -78,7 +78,7 @@ BUBBLE_CIRCLE_GAP = 6           # 圆圈与文字间距
 
 
 class StatusCircle(QLabel):
-    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号 / 暂停灰方块 / 恢复三角。
+    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号 / 中断灰方块。
 
     原版交互：hover 时出现同色光晕（外扩 4px、alpha 110），
     非 hover 时本体缩小 6px；点击（非隐藏态）发出 clicked 信号。
@@ -89,15 +89,13 @@ class StatusCircle(QLabel):
     MODE_HIDDEN = "hidden"
     MODE_DONE = "done"
     MODE_ERROR = "error"
-    MODE_PAUSE = "pause"
-    MODE_RESUME = "resume"
+    MODE_INTERRUPT = "interrupt"
 
     COLORS: ClassVar[dict[str, tuple[QColor, QColor]]] = {
         MODE_DONE: (QColor("#C7F0D4"), QColor("#22C55E")),
         MODE_ERROR: (QColor("#FDE2E2"), QColor("#F04438")),
-        # 暂停/恢复：浅灰底 + 深灰图案（底浅于图案，有辨识度）
-        MODE_PAUSE: (QColor("#E9E9E9"), QColor("#5F6672")),
-        MODE_RESUME: (QColor("#E9E9E9"), QColor("#5F6672")),
+        # 中断：浅灰底 + 深灰图案（底浅于图案，有辨识度）
+        MODE_INTERRUPT: (QColor("#E9E9E9"), QColor("#5F6672")),
     }
 
     def __init__(self, parent=None):
@@ -178,24 +176,13 @@ class StatusCircle(QLabel):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
             painter.drawEllipse(QRectF(12.5 * k, 18.5 * k, 3.0 * k, 3.0 * k))
-        elif self._mode == self.MODE_PAUSE:
-            # 暂停：灰色方块（按圆直径动态居中）
+        elif self._mode == self.MODE_INTERRUPT:
+            # 中断：灰色方块（按圆直径动态居中）
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
             s = BUBBLE_CIRCLE_D * 0.28  # 方块边长 ≈ 圆直径的 28%
             off = (BUBBLE_CIRCLE_D - s) / 2.0
             painter.drawRoundedRect(QRectF(off, off, s, s), s * 0.18, s * 0.18)
-        elif self._mode == self.MODE_RESUME:
-            # 恢复：灰色右向三角（按圆直径动态居中）
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(fg)
-            d = float(BUBBLE_CIRCLE_D)
-            path = QPainterPath()
-            path.moveTo(d * 0.34, d * 0.28)
-            path.lineTo(d * 0.34, d * 0.72)
-            path.lineTo(d * 0.68, d * 0.5)
-            path.closeSubpath()
-            painter.drawPath(path)
         painter.end()
 
 
@@ -436,7 +423,7 @@ COMMAND_FILE = Path(os.path.expanduser("~")) / ".dsh" / "dsh-pet-command.json"
 def _write_command(command: dict) -> None:
     """原子写用户命令文件（~/.dsh/dsh-pet-command.json），插件轮询执行。
 
-    命令：{"cmd": "pause"|"resume", "ts": <epoch>}
+    命令：{"cmd": "interrupt", "ts": <epoch>}
     """
     try:
         COMMAND_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -487,7 +474,7 @@ class PetWidget(QWidget):
         self._circle.clicked.connect(self._on_circle_clicked)
         self._bubble.hoverChanged.connect(self._on_bubble_hover)
         self._completed = False
-        self._paused = False  # 用户点击暂停圆圈（任务暂停中）
+        self._interrupted = False  # 用户点击中断圆圈（任务已中断）
         self._circle_business = StatusCircle.MODE_HIDDEN
         self._show_status_text = bool(config.get("show_status_text", True))
         self._show_bubble = bool(config.get("show_bubble", True))
@@ -675,7 +662,7 @@ class PetWidget(QWidget):
             status = "error"
         elif self._state == "running":
             title = self._task_text or "正在执行任务"
-            phrase = "已暂停" if self._paused else self._status_title()
+            phrase = "已中断" if self._interrupted else self._status_title()
             status = self._action_status
             if self._has_ai_summary:
                 body = self._ai_summary_text
@@ -772,19 +759,15 @@ class PetWidget(QWidget):
         if self._completed:
             self._close_completed()
             return
-        # 任务进行中点击暂停/恢复圆圈：写命令文件，插件轮询执行
-        if self._circle.mode() == StatusCircle.MODE_PAUSE:
-            self._paused = True
-            _write_command({"cmd": "pause", "ts": time.time()})
-            _log("请求暂停任务")
-        elif self._circle.mode() == StatusCircle.MODE_RESUME:
-            self._paused = False
-            _write_command({"cmd": "resume", "ts": time.time()})
-            _log("请求恢复任务")
+        # 任务进行中点击中断圆圈：写命令文件，插件轮询执行（中断当前回合）
+        if self._circle.mode() == StatusCircle.MODE_INTERRUPT:
+            self._interrupted = True
+            _write_command({"cmd": "interrupt", "ts": time.time()})
+            _log("请求中断任务")
         self._update_bubble()
 
     def _on_bubble_hover(self, hovered: bool):
-        # 鼠标进出气泡：刷新圆圈显隐（暂停按钮 hover 可见）
+        # 鼠标进出气泡：刷新圆圈显隐（中断按钮 hover 可见）
         self._refresh_circle_business()
 
     def _close_completed(self):
@@ -805,11 +788,9 @@ class PetWidget(QWidget):
             self._circle_business = StatusCircle.MODE_DONE
         elif self._state == "failed":
             self._circle_business = StatusCircle.MODE_ERROR
-        elif self._state in ("running", "review") and self._bubble._hovered:
-            # 任务进行中 + 鼠标悬停气泡：显示暂停/恢复圆圈（默认隐藏）
-            self._circle_business = (
-                StatusCircle.MODE_RESUME if self._paused else StatusCircle.MODE_PAUSE
-            )
+        elif self._state in ("running", "review") and self._bubble._hovered and not self._interrupted:
+            # 任务进行中 + 鼠标悬停气泡：显示中断圆圈（默认隐藏；已中断则不再显示）
+            self._circle_business = StatusCircle.MODE_INTERRUPT
         else:
             self._circle_business = StatusCircle.MODE_HIDDEN
         self._circle.set_mode(self._circle_business)
