@@ -18,7 +18,7 @@
 ## 📦 安装
 
 > **桌宠装在哪里？** 安装脚本把桌宠**部署到 `%LOCALAPPDATA%\dsh-pet`**（Windows 应用数据目录），
-> 你 clone 的仓库目录只是源码——不要期望桌宠出现在 clone 文件夹里。
+> clone 的仓库目录只是源码。
 > 想改部署位置用 `-InstallPetTo` 参数指定。卸载时用 `scripts/uninstall.ps1 -RemovePetDir`。
 
 ### 前置要求
