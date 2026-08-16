@@ -46,7 +46,9 @@ window.__ModuleLoader__.load({
 						if (alive && typeof state.visible === "boolean") setVisible(state.visible);
 					})
 					.catch(() => {
-						/* 服务暂不可用：保持未知态（占位图标） */
+						// 服务暂不可用：乐观默认可见，保证按钮始终可操作
+						// （点了 toggle 会拿到真实状态并纠正图标）。
+						if (alive) setVisible(true);
 					});
 				return () => {
 					alive = false;
@@ -85,11 +87,13 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			const NS = "pet";
 			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-pet-bridge: dictionaries");
+			// 官方模式（对照 dsh-client-ui-cordis）：inject 等待 sidebar 声明
+			// sidebar.footer.action 插槽后，register 自己的条目（id 唯一）。
 			ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
 				name: "sidebar.footer.action",
 				id: "dsh-pet-toggle",
 				locale: NS
-			}, PetToggleButton), "dsh-pet-bridge: sidebar footer switch");
+			}, PetToggleButton));
 		}
 		exports.apply = apply;
 		exports.inject = inject;

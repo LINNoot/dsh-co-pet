@@ -156,7 +156,11 @@ export function apply(ctx, config = {}) {
             path: "/pet-bridge",
             handler: (req, res) => {
               const respond = (code, body) => {
-                res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+                // 状态接口不可缓存：按钮图标依赖实时可见性
+                res.writeHead(code, {
+                  "content-type": "application/json; charset=utf-8",
+                  "cache-control": "no-store",
+                });
                 res.end(JSON.stringify(body));
               };
               const url = new URL(req.url ?? "/", "http://dsh.local");
