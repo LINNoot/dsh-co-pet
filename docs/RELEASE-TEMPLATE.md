@@ -1,15 +1,13 @@
-# Release 发布说明模板
+# DSH 桌宠 v0.1.0 — Release 发布正文
 
-> 用法：复制本模板到 GitHub Release 的正文，替换 `<...>` 占位内容。
-> 附件：上传 `DshPet.exe`（`scripts\build.ps1` 构建产物，约 56MB）。
+> 直接复制本文件内容到 GitHub Release 正文，替换 `### 📸 截图` 处为效果图即可。
+> 附件：上传 `dist\DshPet.exe`（约 56MB）。
 
----
-
-## 🐱 DSH 桌宠 v0.1.0 
+## 🐱 DSH 桌宠 v0.1.0
 
 让桌面宠物实时响应 **DeepSeek Harness** 的工作状态：任务运行时卖力干活、思考时托腮、等待授权时翘首以盼、任务完成时蹦跳庆祝......
 
-部分沿用codex桌宠设计思路，调整触发逻辑，重构了部分设定，使之更加符合直觉，为 DSH 重新实现状态检测，**开箱即用**。
+部分沿用 codex 桌宠设计思路，调整触发逻辑，重构了部分设定，使之更加符合直觉，为 DSH 重新实现状态检测，**开箱即用**。
 
 ### ✨ 特性
 
@@ -24,7 +22,7 @@
 
 ### 📦 安装
 
-**前置**：Windows 10/11 + DeepSeek Harness（`dsh web`）。构建 exe 需 Python 3.11+（或使用本 Release 附件）。
+**前置**：Windows 10/11 + DeepSeek Harness（`dsh web`，需已运行过一次）。
 
 **方式一：一键脚本（推荐，无需 Python）**
 
@@ -52,7 +50,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 **方式三：手动装插件**
 
 ```powershell
-dsh plugin --profile web add <仓库路径>/plugin
+dsh plugin --profile web add C:\path\to\dsh-co-pet\plugin
 ```
 
 ### 🎮 状态 → 桌宠行为
