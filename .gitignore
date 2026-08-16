@@ -20,3 +20,6 @@ pet/pets/*
 pet/.tmp_test/
 
 plugin/.tmp_test/
+
+# 测试临时目录（任意层级）
+**/.tmp_test/
