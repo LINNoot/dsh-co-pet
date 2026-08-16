@@ -627,6 +627,15 @@ class PetWidget(QWidget):
             title = self._task_text or "等待审阅代码变更"
             phrase = "等待你的输入"
             body = "等待审阅代码变更"
+        elif self._state == "waiting":
+            # 回合结束等待输入：保留气泡（标题 + "等待你的输入"），
+            # 避免任务完成后气泡闪断（turn/end → 完成展示之间不空白）。
+            title = self._task_text or "正在执行任务"
+            phrase = "等待你的输入"
+            body = self._ai_summary_text or (self._action_text if self._action_text != " " else "")
+            status = "ok"
+            if body:
+                body_color = Bubble.COLOR_BODY_GRAY
         elif self._state == "jumping" and self._from_business:
             # 原版：第一行"需要你的授权/等待授权确认"，第二行授权提示（黄）
             title = self._task_text or "需要你的授权"

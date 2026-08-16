@@ -65,6 +65,16 @@ def _run_case(tmp):
     pets_menu = widget._menu.actions()[0].menu()
     check("菜单宠物项 = 1", len(widget._pet_actions) == 1)
 
+    # waiting 态保留气泡（turn/end → 完成展示之间不闪断）
+    widget._task_text = "审查codex桌宠代码准备移植"
+    widget.set_state("waiting", "等待你的输入")
+    check("waiting 保留气泡", widget._bubble.isVisible())
+    check("waiting 气泡标题", "审查codex桌宠代码准备移植" in widget._bubble._title_label.text())
+    check("waiting 气泡短语", "等待你的输入" in widget._bubble._title_label.text())
+    # running 态气泡正常（回归）
+    widget.set_state("running", "任务进行中")
+    check("running 显示气泡", widget._bubble.isVisible())
+
     # 新宠物加入
     shutil.copytree(SRC_PETS / "yuexin", pets_root / "yuexin")
     widget._refresh_pets()
