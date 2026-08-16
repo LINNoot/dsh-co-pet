@@ -7,10 +7,19 @@
 #     [-Force]（已存在 pet-bridge 覆盖时也强制重写）
 #
 # 行为：
-#   1. 把桌宠应用（pet/）复制到目标目录（默认 $env:LOCALAPPDATA\dsh-pet）；
-#   2. 用 `dsh plugin --profile <name> add` 把 dsh-pet-bridge 装进指定 profile；
-#   3. 在该 profile 的 cordis.patch.yml 用户层写入 petPath 覆盖（随 DSH 启动）；
-#   4. 可选：创建桌面快捷方式（启动桌宠）。
+#   0. 前置检查：DSH profile 必须存在（需装过 DSH 并跑过一次 dsh web）、
+#      桌宠 exe 必须可用（-PetExe 指定 / 部署目录已有 / 仓库 dist/ / 自动构建），
+#      缺任一条件立即明确报错中止（不再装到一半才失败）；
+#   1. 把桌宠应用（pet/）复制到目标目录（默认 $env:LOCALAPPDATA\dsh-pet），
+#      pets/ 用 junction 链接到源码（放宠物到源码即可用，勿删部署目录 pets）；
+#   2. -PetExe 指定的 exe 复制进部署目录（桌宠按 exe 所在目录扫描 pets/，
+#      exe 留在下载目录会导致"未找到宠物包"）；
+#   3. 用 `dsh plugin --profile <name> add` 把 dsh-pet-bridge 装进指定 profile
+#      （dsh 命令不可用时自动改写 profile 文件注册）；
+#   4. 在该 profile 的 cordis.patch.yml 用户层写入 petPath 覆盖（随 DSH 启动）；
+#   5. 可选：创建桌面快捷方式（启动桌宠）。
+#   无现成 exe 时：优先自动构建（Python 3.11+，调 scripts/build.ps1），
+#   否则回退 pythonw 直启并自动 pip 安装桌宠依赖（PySide6/Pillow）。
 param(
     [string]$Profile = "web",
     [string]$PluginDir = "",

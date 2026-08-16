@@ -105,6 +105,7 @@ pets/我的宠物/
 
 宠物包放 `pet/pets/`（桌宠部署目录，junction 指向源码 `pet/pets/`）。
 **注意：`pet/pets/` 下没有宠物时，桌宠窗口将无形象可显示**。
+**注意：部署目录 `%LOCALAPPDATA%\dsh-pet\pets` 是链接（junction），不要直接在里面删文件**——会连带删除源码目录；放宠物请改到源码 `pet/pets/`，或使用 `scripts/uninstall.ps1 -RemovePetDir` 整体卸载（脚本会先安全解除链接）。
 
 ## 🔌 通信协议
 

@@ -8,7 +8,11 @@
 #   1. 从 profile 的 cordis.patch.yml 移除 pet-bridge 覆盖；
 #   2. （可选）`dsh plugin --profile <name> remove dsh-pet-bridge`；
 #   3. 删除桌面快捷方式；
-#   4. （可选）删除部署的桌宠目录（含自定义宠物，不可恢复）。
+#   4. （可选）删除部署的桌宠目录。先解除 pets junction 链接（PS 5.1 的
+#      Remove-Item -Recurse 对 junction 会递归删其指向的源码宠物目录），
+#      源码 pet/pets/ 始终保留。
+# 注意：-RemovePlugin 需要 dsh 命令可用；仅装过插件（未用安装脚本部署
+# 桌宠）时不要用 -RemovePetDir（它删的是 %LOCALAPPDATA%\dsh-pet）。
 param(
     [string]$Profile = "web",
     [switch]$RemovePlugin,
