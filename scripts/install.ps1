@@ -87,17 +87,45 @@ Write-Host "    桌宠启动器: $PetExe"
 # ---------- 2. 安装 DSH 插件 ----------
 Write-Step "安装 dsh-pet-bridge 到 profile '$Profile'"
 $pluginAbs = [System.IO.Path]::GetFullPath($PluginDir)
+if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
+else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
 $dshCmd = Get-Command dsh -ErrorAction SilentlyContinue
 if ($dshCmd) {
     & dsh plugin --profile $Profile add $pluginAbs
     if ($LASTEXITCODE -ne 0) { Write-Host "    dsh plugin add 失败（退出码 $LASTEXITCODE）——插件可能已安装，可忽略" -ForegroundColor Yellow }
 } else {
-    Write-Host "    未找到 dsh 命令（仅当前 DSH 运行环境内置）——若插件此前已安装，可忽略此步骤" -ForegroundColor Yellow
+    # dsh 命令不可用（它只内置在 DSH 运行环境）：手动把插件注册进 profile——
+    # 直接编辑 profile 的 package.json（dependencies + bundles 列表），效果与
+    # `dsh plugin add` 相同，保证新用户 clone 后也能一键装上。
+    Write-Host "    未找到 dsh 命令，改为手动注册到 profile 文件…" -ForegroundColor Yellow
+    $profilePkg = Join-Path $profileDir "package.json"
+    if (Test-Path $profilePkg) {
+        try {
+            $pkg = Get-Content $profilePkg -Raw -Encoding UTF8 | ConvertFrom-Json
+            $changed = $false
+            if (-not $pkg.dependencies.'dsh-pet-bridge') {
+                $pkg.dependencies | Add-Member -NotePropertyName 'dsh-pet-bridge' -NotePropertyValue ("link:" + ($pluginAbs -replace "\\", "/")) -Force
+                $changed = $true
+            }
+            if (-not ($pkg.dsh.profile.bundles -contains "dsh-pet-bridge")) {
+                $pkg.dsh.profile.bundles += "dsh-pet-bridge"
+                $changed = $true
+            }
+            if ($changed) {
+                $pkg | ConvertTo-Json -Depth 10 | Set-Content $profilePkg -Encoding UTF8
+                Write-Host "    已手动注册 dsh-pet-bridge 到 $profilePkg" -ForegroundColor Green
+            } else {
+                Write-Host "    profile 已包含 dsh-pet-bridge，跳过" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "    手动注册失败（$($_.Exception.Message)）——请手动执行：dsh plugin --profile $Profile add `"$pluginAbs`"" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "    未找到 profile 文件 $profilePkg —— 请手动执行：dsh plugin --profile $Profile add `"$pluginAbs`"" -ForegroundColor Yellow
+    }
 }
 
 # ---------- 3. 写入 petPath 覆盖 ----------
-if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
-else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
 $patchFile = Join-Path $profileDir "cordis.patch.yml"
 Write-Step "写入 profile 用户层覆盖: $patchFile"
 $petPathEsc = ($PetExe -replace "\\", "/") -replace "'", "''"
