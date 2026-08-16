@@ -115,7 +115,7 @@ export function apply(ctx, config = {}) {
 
   const bridge = new PetBridgeState({
     quietMs: config.completionQuietMs ?? 8000,
-    idleMs: config.idleTimeoutMs ?? 90000,
+    idleMs: config.idleTimeoutMs ?? 300000, // 5 分钟无活动才兜底（长静默任务不误判）
     onEvent: (event, detail) => {
       logger.debug?.(`[dsh-pet-bridge] → ${event} ${detail ? `"${detail.slice(0, 40)}"` : ""}`);
       channel.send(event, detail);

@@ -21,5 +21,6 @@
         autoLaunch: true
         # 目标完成后的静默去抖窗口（毫秒）：窗口内出现任何新活动则取消完成
         completionQuietMs: 8000
-        # 空闲兜底（毫秒）：running/review 状态超过该时长无活动则回 idle
-        idleTimeoutMs: 90000
+        # 空闲兜底（毫秒）：running/review 状态超过该时长无活动才回 idle
+        # （5 分钟，避免长推理/长工具等静默阶段被误判）
+        idleTimeoutMs: 300000

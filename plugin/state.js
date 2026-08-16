@@ -493,7 +493,10 @@ export class PetBridgeState {
         if (outcome === "allowed-once") {
           this._activity();
           this.completed = false;
-          this._defensiveRunning();
+          // 授权通过 = 任务继续：显式恢复 running（approval/asked 置的
+          // waiting 无法被 _defensiveRunning 恢复——否则心跳停发，
+          // 桌宠端 120s 无事件会误判 idle）。
+          this.mode = "running";
           this.onEvent("agent_message", "已授权，继续执行");
           this.onAction("已授权，继续执行", "ok", "action");
         } else if (outcome === "rejected") {

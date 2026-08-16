@@ -584,7 +584,9 @@ class PetWidget(QWidget):
         self._frame_index %= len(frames)
         self.update()
 
-    def set_state(self, state, detail=""):
+    def set_state(self, state, detail="", update_bubble=True):
+        """切换动画状态；update_bubble=False 时不更新气泡（手动切换专用，
+        手动切换只切动画，气泡保持业务状态展示）。"""
         if state not in self._pixmaps:
             return
         # 一次性动画播放期间，业务事件先暂存（手动状态除外）
@@ -606,7 +608,8 @@ class PetWidget(QWidget):
             self._state = state
             self._once_next = once_next
             self._frame_index = 0
-            self._update_bubble()
+            if update_bubble:
+                self._update_bubble()
             self.update()
 
         if once_next is None and not self._dragging and detail != "drag-end":
@@ -686,9 +689,9 @@ class PetWidget(QWidget):
             if body:
                 body_color = Bubble.COLOR_BODY_GRAY
         elif self._state == "review":
-            # 原版：第一行"等待你的输入"，第二行"等待审阅代码变更"
+            # 原版：第一行"等待输入"，第二行"等待审阅代码变更"
             title = self._task_text or "等待审阅代码变更"
-            phrase = "等待你的输入"
+            phrase = "等待输入"
             body = "等待审阅代码变更"
         elif self._state == "waiting":
             # 回合结束等待输入：保留气泡（标题 + "等待你的输入"），
@@ -838,11 +841,12 @@ class PetWidget(QWidget):
     # ------------------------------------------------------------- 手动/切换
 
     def manual_state(self, state: str):
+        """手动切换（托盘菜单）：只切动画，气泡保持业务状态展示。"""
         if state != "waving":
             self._completed = False
             self._completed_timer.stop()
             self._waiting_timer.stop()
-        self.set_state(state, "manual")
+        self.set_state(state, "manual", update_bubble=False)
 
     def switch_pet(self, pet: Pet):
         self._pet = pet

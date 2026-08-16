@@ -160,6 +160,15 @@ test("授权：asked → PermissionRequest；批准 → 继续；拒绝 → deny
   assert.deepEqual(events.at(-1), { event: "deny", detail: "已拒绝授权" });
 });
 
+test("授权通过后恢复 running（防心跳停发致桌宠误判 idle）", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.onSessionEvent({ type: "approval/asked", data: { toolName: "pwsh" } });
+  assert.equal(state.mode, "waiting", "授权等待中");
+  state.onSessionEvent({ type: "approval/decided", data: { outcome: "allowed-once" } });
+  assert.equal(state.mode, "running", "授权通过 = 任务继续，必须恢复 running");
+});
+
 test("目标完成 + 静默去抖 → 触发 done（任务完成动画）", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();

@@ -49,7 +49,7 @@ dsh plugin --profile web add <本仓库路径>/plugin
     autoLaunch: true        # 随 DSH 启动桌宠
     port: 47890             # UDP 端口（与 pet_config.json 一致）
     completionQuietMs: 8000 # 完成静默去抖窗口
-    idleTimeoutMs: 90000    # 空闲兜底
+    idleTimeoutMs: 300000   # 空闲兜底（5 分钟无活动）
 ```
 
 若用 `pythonw` 直启（未打包），`petArgs: ['<路径>/pet_app.py']`。
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 | 请求授权 / 拒绝 | `jumping` → `waiting` / `idle` |
 | 轮次异常结束（blocked/max-tokens/error） | `waiting` / `failed`（不庆祝） |
 | **任务完成**（turn/end completed 或 goal complete + 8s 静默） | `waving` 庆祝 + 绿勾圆圈 + "任务完成"气泡（10s） |
-| 长时间无活动（90s） | `idle` |
+| 长时间无活动（5 分钟） | `idle` |
 
 ## 🐱 宠物包
 
