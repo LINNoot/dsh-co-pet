@@ -612,3 +612,22 @@ test("顶层 agent 集合：setRootAgents + isRootSessionId", () => {
   state.setRootAgents(["session-root-1"]);
   assert.deepEqual(state.snapshot().rootAgentIds, ["session-root-1"]);
 });
+
+test("最近活动顶层会话：标题跟随用 getMostRecentRootId", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.setRootAgents(["session-a", "session-b", "session-c"]);
+  // 无活动 → undefined
+  assert.equal(state.getMostRecentRootId(), undefined);
+  // 会话 A 活动 → A
+  state.onSessionEvent({ type: "assistant/chunk", data: {}, sessionId: "session-a" });
+  h.advance(5000);
+  state.onSessionEvent({ type: "assistant/chunk", data: {}, sessionId: "session-b" });
+  assert.equal(state.getMostRecentRootId(), "session-b", "最新活动的会话");
+  h.advance(5000);
+  state.onSessionEvent({ type: "tool/call", data: { name: "edit" }, sessionId: "session-a" });
+  assert.equal(state.getMostRecentRootId(), "session-a", "A 再次活动后回到 A");
+  // 不在顶层集合的会话不算
+  state.onSessionEvent({ type: "assistant/chunk", data: {}, sessionId: "session-ghost" });
+  assert.equal(state.getMostRecentRootId(), "session-a", "ghost 不在 rootAgentIds 不参与");
+});

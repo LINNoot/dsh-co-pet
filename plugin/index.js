@@ -224,18 +224,23 @@ export function apply(ctx, config = {}) {
       if (Array.isArray(roots)) {
         bridge.setRootAgents(roots.map((a) => a?.id).filter(Boolean));
       }
-      // 会话标题同步（气泡第一行黑体 = 侧边栏标题）：取任一顶层会话
-      // 的标题（sessionTitle 服务），无标题时保持上次值。
+      // 会话标题同步（气泡第一行黑体 = 侧边栏标题）：跟随"正在运行的
+      // 顶层会话"，无运行中时跟随"最近活动的顶层会话"（避免多会话
+      // 并存时取错标题），全都没有时保持上次值。
       if (titleService && Array.isArray(roots) && roots.length > 0) {
-        for (const agent of roots) {
+        let chosen = roots.find((a) => a?.status === "running");
+        if (!chosen) {
+          const recentId = bridge.getMostRecentRootId();
+          chosen = roots.find((a) => a?.id === recentId) ?? roots[0];
+        }
+        if (chosen) {
           try {
-            const snap = titleService.get(agent.session);
+            const snap = titleService.get(chosen.session);
             if (snap?.title) {
               bridge.onSessionTitle(snap.title);
-              break;
             }
           } catch {
-            // 单 agent 标题读取失败：尝试下一个
+            // 标题读取失败：保持上次值
           }
         }
       }

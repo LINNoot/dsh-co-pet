@@ -90,6 +90,7 @@ export class PetBridgeState {
     this.hasActiveGoal = false; // 会话是否有进行中的 goal（有则回合完成不庆祝）
     this.rootAgentIds = new Set(); // 顶层 agent id 集合（agents.roots()，路由判定用）
     this.taskTitle = ""; // 当前任务会话标题（sessionTitle 服务，气泡第一行黑体）
+    this.rootActivity = new Map(); // 顶层会话最近活动时间（sessionId → ts，标题跟随用）
   }
 
   // ------------------------------------------------------------------ 工具
@@ -277,6 +278,23 @@ export class PetBridgeState {
   }
 
   /**
+   * 最近活动的顶层会话 id（标题跟随用）：
+   * 取 rootActivity 中时间最新的、且仍在 rootAgentIds 集合里的会话。
+   * 返回 undefined 表示尚无记录。
+   */
+  getMostRecentRootId() {
+    let best = undefined;
+    let bestTs = -1;
+    for (const [id, ts] of this.rootActivity) {
+      if (ts > bestTs && this.rootAgentIds.has(id)) {
+        best = id;
+        bestTs = ts;
+      }
+    }
+    return best;
+  }
+
+  /**
    * 会话标题更新（index.js 轮询 sessionTitle 服务时调用）。
    * 气泡第一行黑体显示任务会话标题（侧边栏那个），如
    * "审查codex桌宠代码准备移植"；无标题时回退用户消息文本。
@@ -331,6 +349,11 @@ export class PetBridgeState {
       `session:${type}`,
       `${event.sessionId ?? ""} ${String(data?.reason?.kind ?? data?.name ?? data?.operation ?? "")}`.trim(),
     );
+    // 记录顶层会话最近活动（标题跟随"正在跑/最近活动的会话"，
+    // 避免多会话时取错标题）。
+    if (event.sessionId) {
+      this.rootActivity.set(event.sessionId, this.now());
+    }
     // 任何会话事件都算活动信号：长推理（assistant/chunk）、子代理运行期间、
     // 工具长调用等场景都靠它防止空闲兜底误触发（90s 无活动才回 idle）。
     this._touch();
