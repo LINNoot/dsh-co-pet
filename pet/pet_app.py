@@ -159,36 +159,41 @@ class StatusCircle(QLabel):
         painter.setBrush(bg)
         painter.drawEllipse(body_rect)
 
+        # 原版图案坐标按 28px 圆设计：圆圈放大后统一按比例缩放，保持居中美观
+        k = BUBBLE_CIRCLE_D / 28.0
         if self._mode == self.MODE_DONE:
-            # 绿勾（原版固定坐标：28px 圆内）
-            pen = QPen(fg, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            # 绿勾（原版 28px 坐标等比放大）
+            pen = QPen(fg, 2.0 * k, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             path = QPainterPath()
-            path.moveTo(8.0, 14.0)
-            path.lineTo(12.0, 18.0)
-            path.lineTo(20.0, 9.5)
+            path.moveTo(8.0 * k, 14.0 * k)
+            path.lineTo(12.0 * k, 18.0 * k)
+            path.lineTo(20.0 * k, 9.5 * k)
             painter.drawPath(path)
         elif self._mode == self.MODE_ERROR:
-            # 红叹号（原版固定坐标）
-            pen = QPen(fg, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            # 红叹号（原版 28px 坐标等比放大）
+            pen = QPen(fg, 2.4 * k, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
-            painter.drawLine(14, 8.0, 14, 16.5)
+            painter.drawLine(14.0 * k, 8.0 * k, 14.0 * k, 16.5 * k)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
-            painter.drawEllipse(QRectF(12.5, 18.5, 3.0, 3.0))
+            painter.drawEllipse(QRectF(12.5 * k, 18.5 * k, 3.0 * k, 3.0 * k))
         elif self._mode == self.MODE_PAUSE:
-            # 暂停：灰色方块（居中，略小于圆）
+            # 暂停：灰色方块（按圆直径动态居中）
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
-            painter.drawRoundedRect(QRectF(10.0, 10.0, 8.0, 8.0), 1.5, 1.5)
+            s = BUBBLE_CIRCLE_D * 0.28  # 方块边长 ≈ 圆直径的 28%
+            off = (BUBBLE_CIRCLE_D - s) / 2.0
+            painter.drawRoundedRect(QRectF(off, off, s, s), s * 0.18, s * 0.18)
         elif self._mode == self.MODE_RESUME:
-            # 恢复：灰色右向三角
+            # 恢复：灰色右向三角（按圆直径动态居中）
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
+            d = float(BUBBLE_CIRCLE_D)
             path = QPainterPath()
-            path.moveTo(11.0, 8.5)
-            path.lineTo(11.0, 19.5)
-            path.lineTo(19.5, 14.0)
+            path.moveTo(d * 0.34, d * 0.28)
+            path.lineTo(d * 0.34, d * 0.72)
+            path.lineTo(d * 0.68, d * 0.5)
             path.closeSubpath()
             painter.drawPath(path)
         painter.end()
