@@ -25,8 +25,8 @@ $ErrorActionPreference = "Stop"
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
 # ---------- 1. 移除 profile 覆盖 ----------
-if ($env:DSH_HOME) { $profileDir = Join-Path $env:DSH_HOME "profiles" $Profile }
-else { $profileDir = Join-Path $env:USERPROFILE ".dsh\profiles" $Profile }
+if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
+else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
 $patchFile = Join-Path $profileDir "cordis.patch.yml"
 if (Test-Path $patchFile) {
     Write-Step "从 $patchFile 移除 pet-bridge 覆盖"
