@@ -108,19 +108,21 @@ cd plugin; node test/state.test.mjs; node test/visibility.test.mjs; node test/in
 ```text
 dsh-pet/
 ├─ plugin/            # DSH 插件（cordis bundle，纯 ESM 无构建）
-│  ├─ index.js        # 事件订阅（global:true）+ agents 轮询 + webServer 路由 + 生命周期
-│  ├─ state.js        # 状态机（纯逻辑，可单测）：门闩/展示态分层 + 完成去抖
+│  ├─ index.js        # 事件订阅（global:true）+ agents 轮询 + sessionTitle + webServer 路由 + 生命周期
+│  ├─ state.js        # 状态机（纯逻辑，可单测）：门闩/展示态分层 + 完成去抖 + 会话标题
 │  ├─ visibility.js   # Web 开关（开启=spawn/关闭=pet/quit，持久化）
 │  ├─ channel.js      # UDP + 状态文件双通道
 │  ├─ client.js       # 浏览器端：侧边栏电源开关按钮（__ModuleLoader__ bundle）
-│  └─ cordis.patch.yml
+│  ├─ cordis.patch.yml
+│  └─ test/           # 插件单测（state 46 / visibility 8 / inject 2）
 ├─ pet/               # 桌宠应用（Python 3.11 + PySide6）
 │  ├─ pet_app.py      # 主窗口/动画/气泡/托盘/单实例锁
-│  ├─ state_listener.py
-│  ├─ pet_loader.py
-│  ├─ pet_style.py
+│  ├─ state_listener.py  # 事件监听（UDP+文件）、词汇表、日志落盘
+│  ├─ pet_loader.py   # 宠物包扫描与精灵图加载
+│  ├─ pet_style.py    # Codex 样式与 QSS
+│  ├─ test_*.py       # 冒烟 / 气泡 / 刷新 / 样式测试（无 GUI）
 │  └─ pets/           # 宠物包（不随仓库分发）
-├─ scripts/           # install / uninstall / build
+├─ scripts/           # install / uninstall / build / e2e_feed
 └─ docs/architecture.md
 ```
 

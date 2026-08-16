@@ -12,7 +12,9 @@
 - 移除“随 Codex 启动”watcher（由 DSH 插件在启动时拉起桌宠）；
 - 状态词汇表修正（agentstop 等），未知事件不再重置为 idle；
 - review（审阅）状态可真正触发；
-- 气泡文案面向 DeepSeek Harness。
+- 气泡文案面向 DeepSeek Harness；
+- 单实例锁（防双开）；支持 pet/visibility 窗口显隐、pet/quit 退出；
+- 运行日志落盘 ~/.dsh/dsh-pet.log。
 """
 from __future__ import annotations
 

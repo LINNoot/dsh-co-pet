@@ -33,8 +33,6 @@ def main():
     w1, h1 = b.width(), b.height()
     inner_w = w1 - 2 * pet_app.BUBBLE_SHADOW_M
     inner_h = h1 - 2 * pet_app.BUBBLE_SHADOW_M - pet_app.BUBBLE_SHADOW_EXTRA
-    check("内部宽度 = 标题宽 + 状态宽 + 留白 + 圆圈",
-          inner_w == pet_app.BUBBLE_PAD_TOP or True, "")  # 占位（公式复杂，用下方近似断言）
     check("短内容高度 = 标题行 + 上下内边距",
           inner_h == pet_app.BUBBLE_PAD_TOP + pet_app.BUBBLE_TITLE_H + pet_app.BUBBLE_PAD_BOTTOM,
           f"(inner_h={inner_h})")
