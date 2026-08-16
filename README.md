@@ -29,7 +29,9 @@
 
 ```powershell
 # ① 从 Releases 页面下载 DshPet.exe 附件（存到任意位置，如 D:\Downloads\）
-# ② 一键安装（-PetExe 直接指定下载好的 exe，跳过构建）：
+# ② clone 仓库并一键安装（-PetExe 直接指定下载好的 exe，跳过构建）：
+git clone https://github.com/LINNoot/dsh-co-pet.git
+cd dsh-co-pet
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -PetExe D:\Downloads\DshPet.exe
 ```
 
