@@ -577,3 +577,19 @@ test("agents 轮询：与事件状态一致时无副作用", () => {
   assert.equal(events.length, before);
   assert.ok(state.anyRunning);
 });
+
+test("顶层 agent 集合：setRootAgents + isRootSessionId", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.setRootAgents(["session-root-1", "session-root-2", null]);
+  assert.ok(state.isRootSessionId("session-root-1"));
+  assert.ok(state.isRootSessionId("session-root-2"));
+  assert.ok(!state.isRootSessionId("session-child-9"), "子代理会话不是顶层");
+  assert.ok(!state.isRootSessionId("不存在的"), "未知会话不是顶层");
+  // 空列表清空集合
+  state.setRootAgents([]);
+  assert.ok(!state.isRootSessionId("session-root-1"));
+  // 快照可见
+  state.setRootAgents(["session-root-1"]);
+  assert.deepEqual(state.snapshot().rootAgentIds, ["session-root-1"]);
+});

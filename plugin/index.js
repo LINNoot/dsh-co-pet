@@ -168,7 +168,9 @@ export function apply(ctx, config = {}) {
       // 输入记录携带 session id 与 header 判定结果，快照可直接回溯
       // "某事件来自哪个会话、为何被路由为活动/顶层"。
       const sessionId = session.id ?? String(session);
-      const root = isRootSession(session);
+      // 顶层判定：agents.roots() 运行时事实优先（恢复会话 header 可能带
+      // origin 残留导致误判），header 判定兜底（roots 集合尚未建立时）。
+      const root = bridge.isRootSessionId(sessionId) || isRootSession(session);
       logger.debug?.(`[dsh-pet-bridge] session/event ${type} root=${root} session=${sessionId}`);
       if (root) {
         bridge.onSessionEvent({ type, data: event.data, sessionId });
@@ -208,6 +210,13 @@ export function apply(ctx, config = {}) {
       const list = agentsService?.list?.();
       if (Array.isArray(list)) {
         bridge.onAgentsSnapshot(list.map((a) => ({ id: a?.id, status: a?.status })));
+      }
+      // 顶层 agent 集合（agents.roots()）：会话路由判定用——比 header
+      // 判定可靠（恢复会话 header 可能带 origin 残留，导致顶层会话被
+      // 误判为子代理，AI 总结/完成永不触发——本环境已实测复现）。
+      const roots = agentsService?.roots?.();
+      if (Array.isArray(roots)) {
+        bridge.setRootAgents(roots.map((a) => a?.id).filter(Boolean));
       }
     } catch {
       // 服务暂时不可用：跳过本轮

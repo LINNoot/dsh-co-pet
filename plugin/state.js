@@ -88,6 +88,7 @@ export class PetBridgeState {
     this.runningAgents = new Set(); // 正在运行的 agent id 集合（含子代理）
     this.thinking = false; // 思考态节流：每段推理流只提示一次"正在思考"
     this.hasActiveGoal = false; // 会话是否有进行中的 goal（有则回合完成不庆祝）
+    this.rootAgentIds = new Set(); // 顶层 agent id 集合（agents.roots()，路由判定用）
   }
 
   // ------------------------------------------------------------------ 工具
@@ -223,8 +224,7 @@ export class PetBridgeState {
    */
   onAgentsSnapshot(agents) {
     if (!Array.isArray(agents)) return;
-    const seen = new Set();
-    for (const a of agents) {
+    const seen = new Set();    for (const a of agents) {
       const id = a?.id;
       if (typeof id !== "string" || !id) continue;
       seen.add(id);
@@ -257,6 +257,22 @@ export class PetBridgeState {
         }
       }
     }
+  }
+
+  /**
+   * 顶层 agent id 集合（index.js 轮询 agents.roots() 时更新）。
+   * 会话事件路由用它判定"是否顶层会话"——比 header 判定可靠：
+   * 恢复的会话 header 可能带 origin/delegationDepth 残留，导致顶层会话
+   * 被误判为子代理（事件全部降级为 activity，AI 总结/完成永不触发）。
+   * @param {string[]} ids 顶层 agent id 列表
+   */
+  setRootAgents(ids) {
+    this.rootAgentIds = new Set(Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : []);
+  }
+
+  /** 该会话 id 是否为顶层会话（运行时事实优先，header 判定由 index.js 兜底）。 */
+  isRootSessionId(sessionId) {
+    return this.rootAgentIds.has(sessionId);
   }
 
   /** agent/error / turn/end(error) 等失败信号。 */
@@ -535,6 +551,7 @@ export class PetBridgeState {
       thinking: this.thinking,
       anyRunning: this.anyRunning,
       runningAgents: [...this.runningAgents],
+      rootAgentIds: [...this.rootAgentIds],
       lastActivityAgoMs: now - this.lastActivityAt,
       pendingComplete: Boolean(this.pendingComplete),
       history: this.history.slice(-20),
