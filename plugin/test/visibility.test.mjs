@@ -43,11 +43,12 @@ test("setEnabled(true) → 持久化 + 启动桌宠进程", () => {
   assert.equal(data.enabled, true);
 });
 
-test("setEnabled(false) → 持久化 + 发送 pet/quit（桌宠自行退出）", () => {
+test("setEnabled(false) → 持久化 + pet/quit + 无害事件覆盖文件（防残留）", () => {
   const file = path.join(TMP, "b.json");
   const { vis, sent, spawned } = makeVis({ file, initial: true });
   vis.setEnabled(false);
-  assert.deepEqual(sent.at(-1), { event: "pet/quit", detail: "" });
+  assert.equal(sent.at(-2).event, "pet/quit", "先发退出指令");
+  assert.equal(sent.at(-1).event, "agent_message", "随后覆盖状态文件（防止下次启动读到残留 quit）");
   assert.equal(spawned.length, 0, "关闭不应 spawn");
   const data = JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(data.enabled, false);
@@ -58,7 +59,7 @@ test("toggle 切换：true → false（quit）→ true（spawn）", () => {
   const { vis, sent, spawned } = makeVis({ file, initial: true });
   vis.toggle();
   assert.equal(vis.current(), false);
-  assert.equal(sent.at(-1).event, "pet/quit");
+  assert.ok(sent.some((e) => e.event === "pet/quit"), "关闭应发 quit");
   // toggle 到关闭后，新实例读同一文件应恢复"关闭"
   const visMid = new PetVisibility({ file, channel: { send: () => {} } });
   assert.equal(visMid.load(), false);

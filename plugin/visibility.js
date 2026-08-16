@@ -70,6 +70,10 @@ export class PetVisibility {
       // 桌宠自行退出（pet/quit）；插件 spawn 的实例由 index.js 的
       // exit 监听兜底 kill（若未及时退出）。
       this.channel.send("pet/quit", "");
+      // 关键：紧接着用无害事件覆盖状态文件——否则下次启动桌宠时，
+      // 第一次文件轮询会读到残留的 pet/quit 而立即退出（"闪一下就
+      // 没了，怎么点都不行"）。UDP 是实时通道不受影响。
+      this.channel.send("agent_message", "");
       this.onLog("桌宠 → 关闭");
     }
     return this.enabled;

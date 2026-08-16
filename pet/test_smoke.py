@@ -163,6 +163,26 @@ def _run_listener(tmp):
     check("pet/quit → quit_requested", quit_count[0] == 1)
     check("状态文件通道 → failed", has_state("failed", "once:idle", "error"))
 
+    # ---- 启动残留 quit 保护：文件里预置 pet/quit，新 listener 首次轮询必须忽略 ----
+    # （否则桌宠每次启动读到上次关闭残留的 quit 就立即退出——"闪一下就没了"）
+    quit_file = tmp / "pre-quit.json"
+    quit_file.write_text(
+        json.dumps({"src": "dsh-pet-bridge", "event": "pet/quit", "detail": ""}),
+        encoding="utf-8",
+    )
+    listener2 = StateListener(port=port + 1, state_file=quit_file)
+    quit2 = [0]
+    listener2.quit_requested.connect(lambda: quit2.__setitem__(0, quit2[0] + 1))
+    listener2._poll_file()  # 首次读：残留 quit 必须被忽略
+    check("启动残留 quit 被忽略", quit2[0] == 0, f"({quit2[0]})")
+    quit_file.write_text(
+        json.dumps({"src": "dsh-pet-bridge", "event": "pet/quit", "detail": ""}),
+        encoding="utf-8",
+    )
+    listener2._poll_file()  # 运行期（非首次读）：正常响应
+    check("运行期文件 quit 正常响应", quit2[0] == 1, f"({quit2[0]})")
+    listener2.close()
+
 
 if __name__ == "__main__":
     sys.exit(main())

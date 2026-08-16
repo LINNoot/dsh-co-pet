@@ -66,6 +66,7 @@ class StateListener(QObject):
         self._state_file = Path(state_file)
         self._mode = "idle"
         self._last_file_signature = None
+        self._first_file_read = False  # 首次成功读到文件内容（用于忽略启动残留）
         self._last_activity = time.monotonic()
 
         self._udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -105,7 +106,7 @@ class StateListener(QObject):
             if event.strip().lower() == "action":
                 self.action_changed.emit(detail, str(message.get("status", "ok")), str(message.get("kind", "action")))
                 continue
-            self._handle(event, detail)
+            self._handle(event, detail, source_channel="udp")
 
     def _poll_file(self):
         path = self._state_file
@@ -122,16 +123,18 @@ class StateListener(QObject):
             message = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return
+        first_read = not self._first_file_read
+        self._first_file_read = True
         event = str(message.get("event", "unknown"))
         detail = str(message.get("detail") or message.get("payload") or "")[:200]
         if event.strip().lower() == "action":
             self.action_changed.emit(detail, str(message.get("status", "ok")), str(message.get("kind", "action")))
             return
-        self._handle(event, detail)
+        self._handle(event, detail, source_channel="file", first_file_read=first_read)
 
     # ------------------------------------------------------------------ 状态机
 
-    def _handle(self, event: str, detail: str):
+    def _handle(self, event: str, detail: str, source_channel: str = "udp", first_file_read: bool = False):
         key = event.strip().lower()
 
         if key in ("sessionstart",):
@@ -208,6 +211,12 @@ class StateListener(QObject):
             return
 
         if key in ("pet/quit", "petquit", "quit"):
+            # 启动保护：进程刚启动时第一次文件轮询读到的 quit 是
+            # 上次关闭时留在状态文件里的残留（插件已尽力覆盖，这里是
+            # 双保险）——若响应它，桌宠会"闪一下就退出，怎么点都不行"。
+            if source_channel == "file" and first_file_read:
+                _log("忽略启动时状态文件中的残留 quit 事件")
+                return
             self.quit_requested.emit()
             return
 
