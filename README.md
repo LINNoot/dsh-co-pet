@@ -126,6 +126,7 @@ dsh-pet/
 
 ## 🔍 故障排查
 
+- **DSH 启动很慢（`npx ... dsh web` 卡 1 分钟+）**：检查 `~/.npmrc` 是否残留死代理配置（`proxy` / `https-proxy` 指向未运行的本地代理，如 `127.0.0.1:7892`）——npx 每次启动都会等代理连接超时（实测 70s）。删除或注释对应行即可；或用 `node <npx缓存路径>/node_modules/@deepseek-ai/dsh/lib/bin.js web` 直启绕过（0.1s）。
 - **桌宠状态不对**：看 `~/.dsh/dsh-pet-state.debug.json`（插件每 5s 快照：mode/运行集合/最近 40 条输入输出事件）与 `~/.dsh/dsh-pet.log`（桌宠收到的每条事件）。
 - **按钮无效**：确认只有一个桌宠实例（进程自带单实例锁）；`http://127.0.0.1:3080/pet-bridge/state` 应返回 `{"visible":true}`。
 - **完成不庆祝**：确认任务确实结束（GUI 无进行中任务）；goal 会话只认 goal complete。
