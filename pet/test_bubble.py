@@ -117,6 +117,21 @@ def main():
     c.mouseReleaseEvent(release)
     check("隐藏态点击不响应", len(clicks) == 1)
 
+    # 11. visibility 指令 → set_visible 布尔转换（回归：直接连接信号会把
+    # "hide"（truthy 字符串）当显示执行，导致"关闭无效"）
+    class FakeWidget:
+        def __init__(self):
+            self.visible = True
+
+        def set_visible(self, v):
+            self.visible = v
+
+    fw = FakeWidget()
+    pet_app.apply_visibility_cmd(fw, "hide")
+    check("hide → 隐藏", fw.visible is False)
+    pet_app.apply_visibility_cmd(fw, "show")
+    check("show → 显示", fw.visible is True)
+
     print()
     if FAILURES:
         print(f"失败 {len(FAILURES)} 项: {FAILURES}")

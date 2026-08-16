@@ -1016,6 +1016,16 @@ def pick_pet(pets: list[Pet], requested: str | None) -> Pet | None:
     return None
 
 
+def apply_visibility_cmd(widget: "PetWidget", cmd: str) -> None:
+    """把 visibility_changed 信号（"show"/"hide" 字符串）转为窗口显隐。
+
+    注意：set_visible 接受 bool，若直接把信号连到 set_visible，"hide"
+    （truthy 字符串）会被当成显示——这是"关闭无效"的经典错误，
+    必须在连接处转换。
+    """
+    widget.set_visible(cmd == "show")
+
+
 SHARED_MEM_KEY = "dsh-pet-singleton"
 
 
@@ -1081,7 +1091,9 @@ def main() -> int:
     if listener is not None:
         listener.state_changed.connect(widget.apply_business)
         listener.action_changed.connect(widget.set_action)
-        listener.visibility_changed.connect(widget.set_visible)
+        # 信号参数是 "show"/"hide" 字符串：必须转换（直接连接会把
+        # "hide" 当 truthy 执行 show()，导致"关闭无效"）。
+        listener.visibility_changed.connect(lambda cmd: apply_visibility_cmd(widget, cmd))
         listener.quit_requested.connect(app.quit)
 
     tray = None
