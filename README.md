@@ -133,7 +133,7 @@ py pet\test_style.py
 ## 📁 目录结构
 
 ```text
-dsh-pet/
+dsh-co-pet/
 ├─ plugin/            # DSH 插件（cordis bundle，纯 ESM 无构建）
 │  ├─ index.js        # 事件订阅（global:true）+ agents 轮询 + sessionTitle + webServer 路由 + 生命周期
 │  ├─ state.js        # 状态机（纯逻辑，可单测）：门闩/展示态分层 + 完成去抖 + 会话标题
@@ -162,4 +162,4 @@ dsh-pet/
 
 ## License
 
-MIT（宠物素材授权情况见发布说明，不随仓库分发）。
+MIT（代码）。宠物素材 `pet/pets/yuexinmiao/` 来自开源社区，仅供学习交流（见包内说明）。
