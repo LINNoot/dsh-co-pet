@@ -33,7 +33,7 @@
 # ② clone 仓库并一键安装（-PetExe 直接指定下载好的 exe，跳过构建）：
 git clone https://github.com/LINNoot/dsh-co-pet.git
 cd dsh-co-pet
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -PetExe D:\Downloads\DshPet.exe
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
 脚本自动完成：① 部署到 `%LOCALAPPDATA%\dsh-pet`（含宠物目录链接）；② 注册 `dsh-pet-bridge` 到 web profile（`dsh` 命令不可用时自动改写 profile 文件）；③ 写入 petPath 覆盖；④ 创建桌面快捷方式。
