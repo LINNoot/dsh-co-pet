@@ -88,12 +88,38 @@ test("工具调用与 diff → PreToolUse / patch_apply（review）", () => {
   assert.equal(events.at(-1).detail, "已修改 2 个文件");
 });
 
-test("轮次结束（completed）→ 只进等待态，绝不触发完成", () => {
+test("轮次结束（completed）→ 等待态；无 goal 时 8s 静默后触发完成展示", () => {
+  // 原版语义：普通任务（无 active goal）完成后要有完成气泡/对勾圆圈。
   const h = makeHarness();
   const { state, events } = h.makeState();
   state.onSessionEvent(turnEnd("completed"));
   assert.equal(events.at(-1).event, "AgentStop");
-  assert.ok(!events.some((e) => e.event === "done" || e.event === "waving"));
+  assert.ok(!events.some((e) => e.event === "done"), "静默窗口内不触发完成");
+  h.advance(8000);
+  assert.deepEqual(events.at(-1), { event: "done", detail: "任务完成" });
+});
+
+test("有 active goal 时回合完成不庆祝（等 goal complete，避免每轮庆祝）", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onSessionEvent(goalChange("create", { objective: "长期目标" }));
+  state.onSessionEvent(turnEnd("completed"));
+  h.advance(8000);
+  assert.ok(!events.some((e) => e.event === "done"), "goal 进行中回合完成不应触发完成");
+  // goal 完成后收尾回合 → 完成
+  state.onSessionEvent(goalChange("complete", { objective: "长期目标" }));
+  h.advance(8000);
+  assert.deepEqual(events.at(-1), { event: "done", detail: "长期目标" });
+});
+
+test("goal complete 挂起中，收尾 turn/end 不重置完成计时", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onSessionEvent(goalChange("complete", { objective: "X" }));
+  h.advance(3000);
+  state.onSessionEvent(turnEnd("completed")); // 收尾回合（无重复 arm）
+  h.advance(6000);
+  assert.deepEqual(events.at(-1), { event: "done", detail: "X" });
 });
 
 test("轮次出错 → failed", () => {

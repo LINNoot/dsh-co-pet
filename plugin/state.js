@@ -82,6 +82,7 @@ export class PetBridgeState {
     this.completed = false; // 桌宠正处于完成展示
     this.runningAgents = new Set(); // 正在运行的 agent id 集合（含子代理）
     this.thinking = false; // 思考态节流：每段推理流只提示一次"正在思考"
+    this.hasActiveGoal = false; // 会话是否有进行中的 goal（有则回合完成不庆祝）
   }
 
   // ------------------------------------------------------------------ 工具
@@ -344,7 +345,7 @@ export class PetBridgeState {
           break;
         }
         this.thinking = false;
-        // completed / blocked / max-tokens / interrupted → 等待态（不庆祝）
+        // completed / blocked / max-tokens / interrupted → 等待态
         this.hadTurn = true;
         // 仅刷新活动时间戳；不取消 goal 完成挂起的完成信号
         // （goal complete 通常先于收尾 turn/end 到达）
@@ -354,6 +355,13 @@ export class PetBridgeState {
         const detail =
           kind === "blocked" ? "等待处理" : kind === "max-tokens" ? "已达输出上限" : "等待你的输入";
         this.onEvent("AgentStop", detail);
+        // 普通任务完成：无 active goal 时，回合正常结束（completed）且没有
+        // 已挂起的完成信号 → 8s 静默后触发完成展示（原版语义：任务完成后
+        // 气泡第二行 AI 总结 + 对勾圆圈）。有 active goal 时只认 goal complete
+        // （goal 是多轮任务，每轮都庆祝会变成"任务中途庆祝"）。
+        if (kind === "completed" && !this.hasActiveGoal && !this.pendingComplete) {
+          this._armComplete("任务完成");
+        }
         break;
       }
       case "approval/asked": {
@@ -393,12 +401,15 @@ export class PetBridgeState {
         const operation = data.operation;
         const goal = data.goal;
         if (operation === "complete" || goal?.phase === "complete") {
+          this.hasActiveGoal = false; // 目标完成：后续回合完成可正常庆祝
           this.hadTurn = true;
           this._activity();
           this._armComplete(goal?.objective ?? "目标完成");
         } else if (operation === "block" || goal?.phase === "blocked") {
+          this.hasActiveGoal = false;
           this.onFailure(goal?.blockedReason ?? "目标受阻");
         } else if (operation === "create") {
+          this.hasActiveGoal = true;
           this._activity();
           this.completed = false;
           this._defensiveRunning();
@@ -417,8 +428,9 @@ export class PetBridgeState {
           this.completed = false;
           this._defensiveRunning();
           this.onEvent("agent_message", "目标已恢复");
+        } else if (operation === "clear") {
+          this.hasActiveGoal = false;
         }
-        // clear：忽略
         break;
       }
       case "todo/write": {

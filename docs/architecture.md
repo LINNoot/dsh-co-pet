@@ -53,14 +53,21 @@
 ### 完成判定（核心修复）
 
 ```text
-goal/change(complete) ──► armComplete（8s 去抖窗口）
+完成信号（二选一，均带 8s 去抖窗口）：
+  A. goal/change(complete)      —— 目标完成（有 active goal 的会话）
+  B. turn/end(completed) + 无 active goal —— 普通任务回合正常完成
                               │
        窗口内任何新活动 ──► 取消（用户继续追问、工具调用、子代理运行……）
        窗口到期且（无 agent 运行 或 30s 无任何活动）──► done → waving 单次 → waiting
 ```
 
-- **轮次结束（turn/end completed）绝不触发完成**，只发 `AgentStop`
-  （桌宠进入 waiting 等待输入）；
+- **无 goal 的普通会话**：每次回合正常完成（completed）后 8s 静默 → 完成展示
+  （原版语义：完成气泡第二行 AI 总结 + 对勾圆圈）；
+- **有 active goal 的会话**：回合完成不庆祝，只认 `goal/change(complete)`
+  （goal 是多轮任务，每轮庆祝会变成"任务中途庆祝"）；goal 完成后的收尾
+  turn/end 不会重置已挂起的完成计时；
+- **轮次异常结束（blocked/max-tokens/interrupted/error）绝不触发完成**，
+  只发 `AgentStop` 或 `failed`；
 - 子代理会话（`header.origin === 'subagent'` 或带 `delegationDepth`）的
   turn/goal 事件被过滤，避免子任务完成误触发父任务完成；
 - `agent/status` 监听所有 agent（含子代理）：任一 running 即保持门闩打开；
