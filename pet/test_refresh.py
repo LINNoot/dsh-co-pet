@@ -99,6 +99,15 @@ def _run_case(tmp):
     widget.manual_state("idle")
     check("手动切回 idle 气泡仍不变", widget._bubble._title_label.text() == bubble_before)
 
+    # 业务一次性动画播放中手动切换：清空跳转残留，不跳回旧状态、气泡不变
+    widget._once_next = "waiting"  # 模拟完成动画（waving once）播放中
+    widget.manual_state("jumping")
+    check("手动切换清空 once_next", widget._once_next is None)
+    widget._frame_index = 999  # 模拟当前动画播完
+    widget._next_frame()
+    check("不跳回旧状态", widget._state == "jumping", f"({widget._state})")
+    check("播完气泡仍不变", widget._bubble._title_label.text() == bubble_before)
+
     # 新宠物加入
     shutil.copytree(SRC_PETS / "yuexin", pets_root / "yuexin")
     widget._refresh_pets()

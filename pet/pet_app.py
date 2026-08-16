@@ -841,11 +841,17 @@ class PetWidget(QWidget):
     # ------------------------------------------------------------- 手动/切换
 
     def manual_state(self, state: str):
-        """手动切换（托盘菜单）：只切动画，气泡保持业务状态展示。"""
+        """手动切换（托盘菜单）：只切动画，气泡保持业务状态展示。
+
+        同时清掉残留的一次性动画跳转（_once_next）——否则业务完成动画
+        播放中手动切换后，动画播完会跳回旧状态并触发气泡更新。
+        """
         if state != "waving":
             self._completed = False
             self._completed_timer.stop()
             self._waiting_timer.stop()
+        self._once_next = None
+        self._pending_business = None
         self.set_state(state, "manual", update_bubble=False)
 
     def switch_pet(self, pet: Pet):
