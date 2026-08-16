@@ -48,6 +48,13 @@ if (-not $InstallPetTo) { $InstallPetTo = Join-Path $env:LOCALAPPDATA "dsh-pet" 
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
+# 无 BOM 的 UTF-8 写入：PS 5.1 的 Set-Content -Encoding UTF8 会带 BOM，
+# DSH 的 JSON 解析（JSON.parse）不认 BOM，写坏 profile 的 package.json
+# 会导致 DSH 启动崩溃（SyntaxError: Unexpected token）。
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 # ---------- 0. 前置检查（preflight）----------
 # 明确告知全新用户缺什么、怎么补，避免装到一半才失败。
 $profileDir = ""
@@ -134,8 +141,7 @@ if (Test-Path $petsSrc) {
 }
 $petConfig = Join-Path $InstallPetTo "pet_config.json"
 if (-not (Test-Path $petConfig)) {
-    '{"pet": null, "scale": 1.0, "fps": 10, "port": 47890, "always_on_top": true, "show_status_text": false, "show_bubble": true}' |
-        Set-Content -Path $petConfig -Encoding UTF8
+    Write-Utf8NoBom $petConfig '{"pet": null, "scale": 1.0, "fps": 10, "port": 47890, "always_on_top": true, "show_status_text": false, "show_bubble": true}'
 }
 
 # 构建产物（dist/DshPet.exe）存在时自动复制到部署目录（优先使用打包版）
@@ -235,7 +241,8 @@ if ($dshCmd) {
                 $changed = $true
             }
             if ($changed) {
-                $pkg | ConvertTo-Json -Depth 10 | Set-Content $profilePkg -Encoding UTF8
+                # 必须无 BOM 写入：DSH 的 JSON.parse 不认 BOM，带 BOM 会启动崩溃
+                Write-Utf8NoBom $profilePkg ($pkg | ConvertTo-Json -Depth 10)
                 Write-Host "    已手动注册 dsh-pet-bridge 到 $profilePkg" -ForegroundColor Green
             } else {
                 Write-Host "    profile 已包含 dsh-pet-bridge，跳过" -ForegroundColor Green
@@ -287,7 +294,7 @@ if (Test-Path $patchFile) {
             if (-not $skip) { $tmp.Add($line) }
         }
         $lines = @($tmp)
-        Set-Content -Path $patchFile -Value $lines -Encoding UTF8
+        Write-Utf8NoBom $patchFile ($lines -join "`n")
         $nonComment = @($lines | Where-Object { $_ -notmatch "^\s*#" -and $_.Trim() -ne "" })
         $hasBridge = $false
         Write-Host "    -Force：已移除旧 pet-bridge 覆盖"
@@ -301,16 +308,16 @@ if (Test-Path $patchFile) {
             if ($line.Trim() -eq "[]") { $out.Add($override.TrimEnd()) }
             else { $out.Add($line) }
         }
-        Set-Content -Path $patchFile -Value $out -Encoding UTF8
+        Write-Utf8NoBom $patchFile ($out -join "`n")
         Write-Host "    已将空列表替换为 pet-bridge 配置覆盖"
     } else {
         $trimmed = (Get-Content $patchFile -Raw).TrimEnd()
-        Add-Content -Path $patchFile -Value "`n$override" -Encoding UTF8
+        Write-Utf8NoBom $patchFile ($trimmed + "`n" + $override)
         Write-Host "    已在列表末尾追加 pet-bridge 配置覆盖"
     }
 } else {
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-    Set-Content -Path $patchFile -Value $override -Encoding UTF8
+    Write-Utf8NoBom $patchFile $override
 }
 
 # ---------- 4. 桌面快捷方式 ----------

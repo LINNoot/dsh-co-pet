@@ -24,6 +24,13 @@ $ErrorActionPreference = "Stop"
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
+# 无 BOM 的 UTF-8 写入：PS 5.1 的 Set-Content -Encoding UTF8 会带 BOM，
+# DSH 的 JSON 解析（JSON.parse）不认 BOM，写坏 profile 的 package.json
+# 会导致 DSH 启动崩溃（SyntaxError: Unexpected token）。
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 # ---------- 1. 移除 profile 覆盖 ----------
 if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
 else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
@@ -41,12 +48,12 @@ if (Test-Path $patchFile) {
         }
         if (-not $skip) { $out.Add($line) }
     }
-    Set-Content -Path $patchFile -Value $out -Encoding UTF8
+    Write-Utf8NoBom $patchFile ($out -join "`n")
     # 若补丁列表已被清空，恢复为合法的空列表 []（保持注释头）
     $remaining = @($out | Where-Object { $_ -notmatch "^\s*#" -and $_.Trim() -ne "" })
     if ($remaining.Count -eq 0) {
         $out.Add("[]")
-        Set-Content -Path $patchFile -Value $out -Encoding UTF8
+        Write-Utf8NoBom $patchFile ($out -join "`n")
         Write-Host "    补丁列表已空，已恢复为 []。"
     }
     Write-Host "    已清理。"
@@ -79,7 +86,8 @@ if ($RemovePlugin) {
                     $changed = $true
                 }
                 if ($changed) {
-                    $pkg | ConvertTo-Json -Depth 10 | Set-Content $profilePkg -Encoding UTF8
+                    # 必须无 BOM 写入：DSH 的 JSON.parse 不认 BOM，带 BOM 会启动崩溃
+                    Write-Utf8NoBom $profilePkg ($pkg | ConvertTo-Json -Depth 10)
                     Write-Host "    已手动移除 dsh-pet-bridge 注册" -ForegroundColor Green
                 } else {
                     Write-Host "    profile 无 dsh-pet-bridge 注册，跳过" -ForegroundColor Green
