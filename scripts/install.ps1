@@ -45,11 +45,27 @@ New-Item -ItemType Directory -Force -Path $InstallPetTo | Out-Null
 foreach ($name in @("pet_app.py", "state_listener.py", "pet_loader.py", "pet_style.py", "requirements.txt")) {
     Copy-Item (Join-Path $PetDir $name) $InstallPetTo -Force
 }
-foreach ($dir in @("pets", "assets", "fonts")) {
+foreach ($dir in @("assets", "fonts")) {
     $src = Join-Path $PetDir $dir
     if (Test-Path $src) {
         Copy-Item $src $InstallPetTo -Recurse -Force
     }
+}
+# 宠物目录用 junction 链接到源码 pet/pets/：以后直接在源码目录放宠物
+# 即可被打包 exe 识别（"放进去就能用"，无需重新安装/复制）。
+$petsSrc = Join-Path $PetDir "pets"
+$petsDst = Join-Path $InstallPetTo "pets"
+if (Test-Path $petsSrc) {
+    if (Test-Path $petsDst) {
+        $item = Get-Item $petsDst -Force
+        if ($item.LinkType -eq "Junction") {
+            Remove-Item $petsDst -Force
+        } else {
+            Remove-Item $petsDst -Recurse -Force
+        }
+    }
+    New-Item -ItemType Junction -Path $petsDst -Value $petsSrc | Out-Null
+    Write-Host "    宠物目录已链接到源码: $petsDst → $petsSrc（放宠物到源码 pets/ 即可用）"
 }
 $petConfig = Join-Path $InstallPetTo "pet_config.json"
 if (-not (Test-Path $petConfig)) {
