@@ -216,9 +216,10 @@ export class PetBridgeState {
    * 任意会话的活动事件（含子代理）：只刷新活动时间，不产生任何桌宠事件、
    * 不改变状态。用于让长推理/子代理运行期间插件端空闲兜底（90s）不会误触发。
    * @param {string} type 会话事件类型（turn/start、step/start、assistant/chunk 等）
+   * @param {string} [sessionId] 来源会话 id（诊断）
    */
-  onActivity(type) {
-    this._pushIn(`activity:${type}`);
+  onActivity(type, sessionId = "") {
+    this._pushIn(`activity:${type}`, sessionId);
     this._touch();
   }
 
@@ -240,7 +241,10 @@ export class PetBridgeState {
   /** 会话事件（仅顶层会话；index.js 已过滤）。 */
   onSessionEvent(event) {
     const { type, data } = event;
-    this._pushIn(`session:${type}`, String(data?.reason?.kind ?? data?.name ?? data?.operation ?? ""));
+    this._pushIn(
+      `session:${type}`,
+      `${event.sessionId ?? ""} ${String(data?.reason?.kind ?? data?.name ?? data?.operation ?? "")}`.trim(),
+    );
     // 任何会话事件都算活动信号：长推理（assistant/chunk）、子代理运行期间、
     // 工具长调用等场景都靠它防止空闲兜底误触发（90s 无活动才回 idle）。
     this._touch();

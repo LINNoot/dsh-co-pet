@@ -34,15 +34,28 @@ STATE_FILE = Path(os.path.expanduser("~")) / ".dsh" / "dsh-pet-state.json"
 IDLE_TIMEOUT_SECONDS = 120.0
 
 
+LOG_FILE = Path(os.path.expanduser("~")) / ".dsh" / "dsh-pet.log"
+
+
 def _log(message: str):
-    """无控制台环境（pythonw）下安全地输出日志。"""
+    """无控制台环境（pythonw）下安全地输出日志：stderr（有则写）+ 落盘文件。
+
+    桌宠运行期诊断（收到的每一条事件）都记到 ~/.dsh/dsh-pet.log，
+    排查"没反应/状态不对"时直接看该文件。
+    """
     import sys
 
+    line = f"[{time.strftime('%H:%M:%S')}] {message}"
     stream = sys.stderr or sys.stdout
-    if stream is None:
-        return
+    if stream is not None:
+        try:
+            print(f"[dsh-pet] {line}", file=stream)
+        except Exception:
+            pass
     try:
-        print(f"[dsh-pet] {message}", file=stream)
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
     except Exception:
         pass
 
@@ -136,6 +149,7 @@ class StateListener(QObject):
 
     def _handle(self, event: str, detail: str, source_channel: str = "udp", first_file_read: bool = False):
         key = event.strip().lower()
+        _log(f"收到事件: {event!r} detail={detail[:40]!r} 通道={source_channel} 首次文件读={first_file_read}")
 
         if key in ("sessionstart",):
             self._mode = "idle"

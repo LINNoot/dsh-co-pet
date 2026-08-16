@@ -155,12 +155,17 @@ export function apply(ctx, config = {}) {
   ctx.on("session/event", (session, event) => {
     if (!event?.type) return;
     const type = event.type;
-    if (isRootSession(session)) {
-      bridge.onSessionEvent({ type, data: event.data });
+    // 输入记录携带 session id 与 header 判定结果，快照可直接回溯
+    // "某事件来自哪个会话、为何被路由为活动/顶层"。
+    const sessionId = session.id ?? String(session);
+    const root = isRootSession(session);
+    logger.debug?.(`[dsh-pet-bridge] session/event ${type} root=${root} session=${sessionId}`);
+    if (root) {
+      bridge.onSessionEvent({ type, data: event.data, sessionId });
     } else if (ACTIVITY_TYPES.has(type)) {
       // 子代理的活动事件：刷新活动时间与运行态，防止长任务期间
       // 空闲兜底误触发（原版 rollout 高频事件的等价物）
-      bridge.onActivity(type);
+      bridge.onActivity(type, sessionId);
     }
   });
 

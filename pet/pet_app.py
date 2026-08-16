@@ -644,6 +644,7 @@ class PetWidget(QWidget):
         kind=summary：AI 总结行，出现后锁定显示（原版语义），
         新指令（空动作行或"收到指令"）时解锁。
         """
+        _log(f"动作行: text={text[:30]!r} status={status} kind={kind}")
         self._action_text = text
         if status in ("ok", "warn", "error"):
             self._action_status = status
@@ -673,6 +674,7 @@ class PetWidget(QWidget):
         return "回复中"
 
     def _mark_completed(self):
+        _log("完成展示触发（对勾圆圈 + 完成气泡，10 秒）")
         self._completed = True
         self._completed_timer.start(10000)
         self._waiting_timer.start(20000)
