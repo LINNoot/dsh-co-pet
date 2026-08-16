@@ -759,7 +759,10 @@ class PetWidget(QWidget):
 
     def _on_completed_timeout(self):
         self._completed = False
-        self._update_bubble()
+        # 完成展示结束：彻底隐藏气泡与圆圈——此后不应再有任何气泡
+        # （waving 动画已跳回 waiting 态，若不隐藏会弹出"等待你的输入"残留）
+        self._bubble.hide()
+        self._circle.set_mode(StatusCircle.MODE_HIDDEN)
 
     def _on_waiting_timeout(self):
         if self._business_state == "waiting":

@@ -90,6 +90,14 @@ def _run_case(tmp):
     widget._refresh_circle_business()
     check("恢复后非 hover 再隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
 
+    # 完成展示结束：气泡与圆圈彻底隐藏（不再有"等待你的输入"残留气泡）
+    widget.set_state("waiting", "等待你的输入")
+    widget._mark_completed()
+    check("完成展示气泡显示", widget._bubble.isVisible())
+    widget._on_completed_timeout()
+    check("完成展示结束气泡隐藏", not widget._bubble.isVisible())
+    check("完成展示结束圆圈隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
+
     # 新宠物加入
     shutil.copytree(SRC_PETS / "yuexin", pets_root / "yuexin")
     widget._refresh_pets()
