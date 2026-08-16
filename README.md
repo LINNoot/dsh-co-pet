@@ -1,107 +1,80 @@
 # DSH 桌宠（dsh-pet）
 
-让桌面宠物响应 **DeepSeek Harness** 工作状态的插件 + 桌宠应用。
+让桌面宠物实时响应 **DeepSeek Harness** 的工作状态：任务运行时卖力干活、思考时托腮、等待授权时翘首以盼、任务完成时蹦跳庆祝并弹出绿色对勾 + AI 总结气泡。
 
-- **plugin/** — DSH 桥接插件 `dsh-pet-bridge`：订阅 DSH 生命周期事件
-  （`agent/status`、`session/event`、`approval/*`、`goal/change`），经状态机
-  转换为桌宠事件，通过 UDP + 状态文件推送；可随 DSH 启动自动拉起桌宠；
-  **Web GUI 侧边栏底部自带桌宠开关按钮**（显示/隐藏，状态持久化）。
-- **pet/** — 桌宠应用（Python 3.11 + PySide6）：透明置顶小窗口，按 Codex
-  宠物规则播放精灵图动画，气泡展示任务进度/状态，支持拖拽、悬浮、托盘菜单。
-- **scripts/** — 安装/卸载/打包脚本。
+沿用 Codex 桌宠的精灵图契约与交互设计，为 DSH 重新实现状态检测（事件 + agents 轮询双通道），**Web GUI 侧边栏自带电源开关**（关闭=退出进程，开启=重新拉起）。
 
-本仓库以 Codex 桌宠为基板，根据更符合直觉的操作调整重构而来
-## 快速开始
+## ✨ 特性
 
-### 1. 安装插件
+- **实时状态感知**：`session/event` 细粒度事件（turn/step/tool/chunk/approval/goal）+ `agent/status` + **`agents` 服务轮询校正**（社区实测 agent/status 事件在部分部署可能丢失——轮询兜底，杜绝"卡 running/莫名 running"）
+- **完成判定二选一**：无 goal 的普通任务回合正常结束 → 庆祝；有 goal 的会话 → 只认 goal complete（避免每轮庆祝）；均带 8s 静默去抖
+- **原版 Codex 气泡**：白色胶囊 + 状态短语 + AI 总结第二行 + 右侧状态圆圈（hover 光晕，完成时绿勾）
+- **Web GUI 电源开关**：侧边栏底部按钮，关闭=桌宠进程退出、开启=重新启动，状态持久化
+- **拖拽/悬浮/托盘**：完整交互，双击托盘图标切换显示
+- **零网络零 LLM 成本**：状态 → 动画全确定性推导
+
+## 📦 安装
+
+### 方式一：一键安装脚本（Windows）
 
 ```powershell
-# 在仓库根目录
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-# 已安装过、想重写 petPath 等覆盖时：
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Force
 ```
 
-脚本会：把桌宠应用部署到 `%LOCALAPPDATA%\dsh-pet`，用 `dsh plugin` 把
-`dsh-pet-bridge` 装进 web profile，并在 profile 用户层写入桌宠路径覆盖，
-最后创建桌面快捷方式。
+脚本自动完成：① 用 PyInstaller 构建 `DshPet.exe`；② 部署到 `%LOCALAPPDATA%\dsh-pet`；③ 用 `dsh plugin` 把 `dsh-pet-bridge` 装进 web profile；④ 写入 petPath 覆盖；⑤ 创建桌面快捷方式。
 
-**重启 DSH（`dsh web`）后生效。** 桌宠将随 DSH 自动启动。
+**重启 DSH（`dsh web`）后生效**，桌宠随 DSH 自动启动。
 
-也可以手动安装插件：
+### 方式二：手动安装插件
 
 ```powershell
-dsh plugin --profile web add <本仓库绝对路径>/plugin
+dsh plugin --profile web add <本仓库路径>/plugin
 ```
 
-然后在 `~/.dsh/profiles/web/cordis.patch.yml`（用户层，覆盖 bundle 默认值）
-中按需配置：
+然后在 `~/.dsh/profiles/web/cordis.patch.yml` 配置：
 
 ```yaml
 - id: pet-bridge
   config:
-    petPath: 'C:/tools/dsh-pet/DshPet.exe'   # 随 DSH 启动桌宠
-    petArgs: []                              # pythonw 直启时需要：['<绝对路径>/pet_app.py']
-    port: 47890                              # 桌宠 UDP 端口（与 pet_config.json 一致）
-    autoLaunch: true
-    completionQuietMs: 8000                  # 目标完成后的静默去抖窗口
-    idleTimeoutMs: 90000                     # 空闲兜底
+    petPath: 'C:/Users/<你>/AppData/Local/dsh-pet/DshPet.exe'  # 桌宠可执行文件
+    autoLaunch: true        # 随 DSH 启动桌宠
+    port: 47890             # UDP 端口（与 pet_config.json 一致）
+    completionQuietMs: 8000 # 完成静默去抖窗口
+    idleTimeoutMs: 90000    # 空闲兜底
 ```
 
-> 安装器（install.ps1）会自动完成部署与覆盖写入；若用 `pythonw` 直接运行
-> 桌宠（未打包 exe），`petArgs` 由安装器自动填好，无需手动配置。
+若用 `pythonw` 直启（未打包），`petArgs: ['<路径>/pet_app.py']`。
 
-### 2. 启动桌宠
+### 开发模式运行桌宠（不打包）
 
 ```powershell
-# 开发模式（需要 Python 3.11+ 与 PySide6）
 py -m pip install -r pet/requirements.txt
 py pet/pet_app.py
-
-# 打包成绿色单文件
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1
-# 产出 dist/DshPet.exe（与 pets/、assets/、fonts/ 同目录即可运行）
 ```
 
-右键桌宠可切换宠物、手动切换状态、调整大小、开关置顶/状态文字/气泡框；
-双击托盘图标隐藏/显示桌宠。
-
-### 3. 卸载
+### 卸载
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -RemovePetDir
 ```
 
-## 状态映射
+## 🎮 状态 → 桌宠行为
 
-| DSH 事件 | 桌宠动画 |
+| DSH 信号 | 桌宠行为 |
 | --- | --- |
-| 用户提交消息（`user/message`） | `running`（气泡显示任务文本） |
-| 工具调用（`tool/call` / `tool/result`） | `running`（气泡显示工具名/进度） |
-| 产出代码变更（`tool/result` 带 diff） | `review` 循环（等待审阅） |
-| 请求授权（`approval/asked`） | `jumping` 单次 → `waiting` |
-| 授权通过（`allowed-once`） | `running` |
-| 拒绝授权（`rejected`） | `idle` |
-| 轮次结束（`turn/end` completed/blocked/max-tokens） | `waiting`（等待你的输入，**不庆祝**） |
-| 轮次/步骤失败（`turn/end` error、`agent/error`） | `failed` 单次 → `idle` |
-| **目标完成**（`goal/change` complete）+ 静默去抖 8s | `waving` 单次 → `waiting`（绿勾气泡 10s） |
-| 目标受阻（`goal/change` block） | `failed` 单次 → `idle` |
+| 用户提交消息 / 回合开始 | `running`，气泡显示任务文本 |
+| 推理（step/start、assistant/chunk） | `running`，气泡"正在思考" |
+| 模型完整回复（assistant/message） | 气泡第二行 **AI 总结**（≤20 字） |
+| 工具调用 / 完成 | `running`，气泡"调用 X / X 完成" |
+| 产出代码变更（diff） | `review` 循环等待审阅 |
+| 请求授权 / 拒绝 | `jumping` → `waiting` / `idle` |
+| 轮次异常结束（blocked/max-tokens/error） | `waiting` / `failed`（不庆祝） |
+| **任务完成**（turn/end completed 或 goal complete + 8s 静默） | `waving` 庆祝 + 绿勾圆圈 + "任务完成"气泡（10s） |
 | 长时间无活动（90s） | `idle` |
 
-### 完成判定（修复原版 bug 的关键）
+## 🐱 宠物包
 
-原版桌宠把 **任何轮次结束** 都当成任务完成，导致多轮任务中途反复出现
-“完成”动画。本实现中：
-
-- 轮次结束只进入 `waiting`；
-- 只有 **目标完成（goal complete）** 才会触发完成动画，且需经过
-  `completionQuietMs`（默认 8s）静默去抖窗口——窗口内出现任何新活动
-  （新消息、工具调用、子代理运行）都会取消完成信号。
-
-## 宠物包
-
-结构可参考 Codex，高度兼容codex桌宠 。**本仓库不随源码分发宠物素材**（授权通常不明确），
-请放入自己的宠物包：
+沿用 Codex 桌宠契约（**不随仓库分发素材**，请放入自己的宠物包）：
 
 ```text
 pets/我的宠物/
@@ -109,53 +82,54 @@ pets/我的宠物/
   spritesheet.webp  # 8 列；9 行（v1，192x208/格）或 11 行（v2）
 ```
 
-宠物包可放在 `pet/pets/`（应用目录，优先）或 `~/.dsh/pets/`（用户目录，
-升级应用不丢失）。安装器会把 `pet/pets/` 内容一并部署到
-`%LOCALAPPDATA%\dsh-pet\pets\`。
+宠物包放 `pet/pets/`（应用目录）或 `~/.dsh/pets/`（用户目录，升级不丢）。
 
-## 通信协议
+## 🔌 通信协议
 
-插件 → 桌宠：
+插件 → 桌宠（双通道）：
+1. UDP `127.0.0.1:<port>`：`{"src":"dsh-pet-bridge","event":"<事件>","detail":"<文本>"}`（`src` 标记隔离旧 Codex 报文）
+2. 状态文件 `~/.dsh/dsh-pet-state.json`（原子写，桌宠 300ms 轮询兜底）
 
-1. UDP 报文 `127.0.0.1:<port>`：`{"event": "<事件名>", "detail": "<文本>"}`；
-2. 状态文件 `~/.dsh/dsh-pet-state.json`（原子写入，同上格式）——桌宠每
-   300ms 轮询一次作为兜底。
+另有控制事件：`pet/visibility`（窗口显隐）、`pet/quit`（进程退出）；Web 开关状态持久化于 `~/.dsh/dsh-pet-visibility.json`。
 
-事件名词汇表（不区分大小写）：`SessionStart`、`UserPromptSubmit`、`Prompt`、
-`AgentStart`、`AgentStop`、`PreToolUse`、`PostToolUse`、`SubagentStart`、
-`SubagentStop`、`AgentMessage`、`ToolUse`、`PatchApply`、`PermissionRequest`、
-`Approval`、`Deny`、`Failed`、`Error`、`Stop`、`SessionEnd`、`Done`、`Idle`、
-`Waiting`、`Action`（进度行）。未知事件会被忽略（不再重置为 idle）。
-
-## 测试
+## 🧪 测试
 
 ```powershell
-# 插件状态机单测（14 项）
-cd plugin; node --test
+# 插件：状态机 43 项 + 开关 8 项 + cordis 注入回归 2 项
+cd plugin; node test/state.test.mjs; node test/visibility.test.mjs; node test/inject.test.mjs
 
-# 桌宠监听器/加载器冒烟测试（19 项，无 GUI）
+# 桌宠：监听器/加载器冒烟 + 气泡排版（无 GUI）
 .venv\Scripts\python.exe pet\test_smoke.py
+.venv\Scripts\python.exe pet\test_bubble.py
 ```
 
-## 目录结构
+## 📁 目录结构
 
 ```text
 dsh-pet/
 ├─ plugin/            # DSH 插件（cordis bundle，纯 ESM 无构建）
-│  ├─ index.js        # 事件订阅 + 自动拉起桌宠
-│  ├─ state.js        # 状态机（纯逻辑，可单测）
-│  ├─ channel.js      # UDP + 状态文件通道
+│  ├─ index.js        # 事件订阅（global:true）+ agents 轮询 + webServer 路由 + 生命周期
+│  ├─ state.js        # 状态机（纯逻辑，可单测）：门闩/展示态分层 + 完成去抖
+│  ├─ visibility.js   # Web 开关（开启=spawn/关闭=pet/quit，持久化）
+│  ├─ channel.js      # UDP + 状态文件双通道
+│  ├─ client.js       # 浏览器端：侧边栏电源开关按钮（__ModuleLoader__ bundle）
 │  └─ cordis.patch.yml
-├─ pet/               # 桌宠应用（Python + PySide6）
-│  ├─ pet_app.py      # 主窗口/动画/气泡/托盘
+├─ pet/               # 桌宠应用（Python 3.11 + PySide6）
+│  ├─ pet_app.py      # 主窗口/动画/气泡/托盘/单实例锁
 │  ├─ state_listener.py
 │  ├─ pet_loader.py
 │  ├─ pet_style.py
-│  └─ pets/           # 宠物包
-├─ scripts/           # install / uninstall / build / e2e
+│  └─ pets/           # 宠物包（不随仓库分发）
+├─ scripts/           # install / uninstall / build
 └─ docs/architecture.md
 ```
 
+## 🔍 故障排查
+
+- **桌宠状态不对**：看 `~/.dsh/dsh-pet-state.debug.json`（插件每 5s 快照：mode/运行集合/最近 40 条输入输出事件）与 `~/.dsh/dsh-pet.log`（桌宠收到的每条事件）。
+- **按钮无效**：确认只有一个桌宠实例（进程自带单实例锁）；`http://127.0.0.1:3080/pet-bridge/state` 应返回 `{"visible":true}`。
+- **完成不庆祝**：确认任务确实结束（GUI 无进行中任务）；goal 会话只认 goal complete。
+
 ## License
 
-MIT（宠物素材的授权情况见仓库发布说明）。
+MIT（宠物素材授权情况见发布说明，不随仓库分发）。

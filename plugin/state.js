@@ -20,10 +20,15 @@ const clampDetail = (text, max = 120) => {
 };
 
 const firstText = (blocks) => {
+  // 防御性读取：content 可能是 block 数组（text/reasoning/tool-call）、
+  // 字符串、或空；text block 字段可能是 text/content 变体。
+  if (typeof blocks === "string") return blocks.trim();
   if (!Array.isArray(blocks)) return "";
   for (const b of blocks) {
-    if (b && b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-      return b.text.trim();
+    if (!b || typeof b !== "object") continue;
+    if (b.type === "text") {
+      const t = typeof b.text === "string" ? b.text : typeof b.content === "string" ? b.content : "";
+      if (t.trim()) return t.trim();
     }
   }
   return "";
@@ -202,6 +207,56 @@ export class PetBridgeState {
   /** 是否有任一 agent（含子代理）正在运行。 */
   get anyRunning() {
     return this.runningAgents.size > 0;
+  }
+
+  /**
+   * agents 服务轮询快照（index.js 每秒调用）：校正 runningAgents。
+   *
+   * 轮询是权威状态源——社区插件实测（dsh-kun-like-pet v4）：部分部署里
+   * agent/status 事件不流经总线（831 次观测 0 次），事件监听会永久漏掉
+   * 完成信号；即便事件可达，idle 事件也可能丢失导致"卡 running"。
+   * 校正规则：
+   *   - 轮询 running 但集合没有 → 补入（事件丢失兜底）；
+   *   - 轮询 idle 但集合有 → 移除（卡 running 兜底）；
+   *   - 轮询未出现的 agent → 移除（已销毁/不可见）。
+   * @param {Array<{id?: string, status?: string}>} agents agents.list() 快照
+   */
+  onAgentsSnapshot(agents) {
+    if (!Array.isArray(agents)) return;
+    const seen = new Set();
+    for (const a of agents) {
+      const id = a?.id;
+      if (typeof id !== "string" || !id) continue;
+      seen.add(id);
+      const running = a?.status === "running";
+      const inSet = this.runningAgents.has(id);
+      if (running && !inSet) {
+        const wasIdle = this.runningAgents.size === 0;
+        this.runningAgents.add(id);
+        this._pushIn("poll", `${id} running（轮询补入）`);
+        this._activity();
+        this._openGate("poll");
+        if (wasIdle && !this.completed) {
+          this.onEvent("AgentStart", "任务进行中");
+        }
+      } else if (!running && inSet) {
+        this.runningAgents.delete(id);
+        this._pushIn("poll", `${id} idle（轮询校正）`);
+        if (this.runningAgents.size === 0) {
+          this._closeGate("poll");
+        }
+      }
+    }
+    // 轮询中不再出现的 agent（已销毁等）：从集合移除
+    for (const id of [...this.runningAgents]) {
+      if (!seen.has(id)) {
+        this.runningAgents.delete(id);
+        this._pushIn("poll", `${id} 消失（轮询移除）`);
+        if (this.runningAgents.size === 0) {
+          this._closeGate("poll");
+        }
+      }
+    }
   }
 
   /** agent/error / turn/end(error) 等失败信号。 */

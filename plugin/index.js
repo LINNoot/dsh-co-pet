@@ -145,29 +145,41 @@ export function apply(ctx, config = {}) {
 
   // 任一 agent（含子代理）状态变化。agent/status 经 dsh-scope 分发时
   // payload 带 agent 对象；个别路径只 emit {status}，防御性取 id。
-  ctx.on("agent/status", ({ agent, status }) => {
-    const agentId = agent?.id ?? "unknown";
-    logger.debug?.(`[dsh-pet-bridge] agent/status ${agentId} → ${status}`);
-    bridge.onAgentStatus(agentId, status);
-  });
+  // { global: true }：跳出 scoped 上下文过滤，确保收到所有 agent 的
+  // 状态（参考官方社区插件 dsh-desktop-pet 的 HarnessBridge 写法）。
+  ctx.on(
+    "agent/status",
+    ({ agent, status }) => {
+      const agentId = agent?.id ?? "unknown";
+      logger.debug?.(`[dsh-pet-bridge] agent/status ${agentId} → ${status}`);
+      bridge.onAgentStatus(agentId, status);
+    },
+    { global: true },
+  );
 
-  // 会话日志事件（仅实时追加；重放/种子不触发）
-  ctx.on("session/event", (session, event) => {
-    if (!event?.type) return;
-    const type = event.type;
-    // 输入记录携带 session id 与 header 判定结果，快照可直接回溯
-    // "某事件来自哪个会话、为何被路由为活动/顶层"。
-    const sessionId = session.id ?? String(session);
-    const root = isRootSession(session);
-    logger.debug?.(`[dsh-pet-bridge] session/event ${type} root=${root} session=${sessionId}`);
-    if (root) {
-      bridge.onSessionEvent({ type, data: event.data, sessionId });
-    } else if (ACTIVITY_TYPES.has(type)) {
-      // 子代理的活动事件：刷新活动时间与运行态，防止长任务期间
-      // 空闲兜底误触发（原版 rollout 高频事件的等价物）
-      bridge.onActivity(type, sessionId);
-    }
-  });
+  // 会话日志事件（仅实时追加；重放/种子不触发）。
+  // { global: true }：同 agent/status——不依赖作用域过滤，所有会话
+  // （含非当前/子代理）的事件都可达，由 isRootSession 区分。
+  ctx.on(
+    "session/event",
+    (session, event) => {
+      if (!event?.type) return;
+      const type = event.type;
+      // 输入记录携带 session id 与 header 判定结果，快照可直接回溯
+      // "某事件来自哪个会话、为何被路由为活动/顶层"。
+      const sessionId = session.id ?? String(session);
+      const root = isRootSession(session);
+      logger.debug?.(`[dsh-pet-bridge] session/event ${type} root=${root} session=${sessionId}`);
+      if (root) {
+        bridge.onSessionEvent({ type, data: event.data, sessionId });
+      } else if (ACTIVITY_TYPES.has(type)) {
+        // 子代理的活动事件：刷新活动时间与运行态，防止长任务期间
+        // 空闲兜底误触发（原版 rollout 高频事件的等价物）
+        bridge.onActivity(type, sessionId);
+      }
+    },
+    { global: true },
+  );
 
   // 步骤/轮次错误（agent/error 与 turn/end(error) 双保险）
   ctx.on("agent/error", ({ error }) => {
@@ -181,6 +193,27 @@ export function apply(ctx, config = {}) {
   // 空闲兜底心跳
   const ticker = setInterval(() => bridge.onTick(), 5000);
   ticker.unref?.();
+
+  // agents 服务轮询（权威状态源，1s）：agent/status 事件可能丢失/不送达
+  // （社区实测 dsh-kun-like-pet v4：831 次观测 status 类事件 0 次），
+  // 轮询校正 runningAgents——补事件丢失、除"卡 running"。
+  let agentsService = null;
+  try {
+    agentsService = ctx.get("agents");
+  } catch {
+    agentsService = null;
+  }
+  const agentsPoll = setInterval(() => {
+    try {
+      const list = agentsService?.list?.();
+      if (Array.isArray(list)) {
+        bridge.onAgentsSnapshot(list.map((a) => ({ id: a?.id, status: a?.status })));
+      }
+    } catch {
+      // 服务暂时不可用：跳过本轮
+    }
+  }, 1000);
+  agentsPoll.unref?.();
 
   // 活动心跳：running/review 期间每 30 秒向桌宠发一次空事件，
   // 刷新桌宠端 90s 空闲兜底（长推理/子代理长跑时桌面端无语义事件可收）
@@ -260,6 +293,7 @@ export function apply(ctx, config = {}) {
       disposing = true; // 主动收尾：kill 桌宠不触发开关状态同步
       clearInterval(ticker);
       clearInterval(heartbeat);
+      clearInterval(agentsPoll);
       bridge.dispose();
       channel.close();
       if (petProc && !petProc.killed) {

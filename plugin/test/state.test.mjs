@@ -534,3 +534,46 @@ test("快照：历史环形缓冲上限", () => {
   assert.ok(state.history.length <= 40, `history 应 ≤40，实际 ${state.history.length}`);
   assert.equal(state.snapshot().history.length, 20, "快照只带最近 20 条");
 });
+
+test("agents 轮询：running 补入（事件丢失兜底）", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  // 事件从未到达，轮询先发现 agent running
+  state.onAgentsSnapshot([{ id: "agent-1", status: "running" }]);
+  assert.ok(state.anyRunning, "轮询补入 running agent");
+  assert.equal(events.at(-1).event, "AgentStart");
+  assert.equal(state.gateSource, "poll");
+  // 轮询再次运行：幂等（不重复 AgentStart）
+  const before = events.length;
+  state.onAgentsSnapshot([{ id: "agent-1", status: "running" }]);
+  assert.equal(events.length, before, "重复轮询不产生重复事件");
+});
+
+test("agents 轮询：idle 校正（卡 running 兜底）", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onAgentStatus("agent-1", "running"); // 事件说 running（idle 事件丢失）
+  assert.ok(state.anyRunning);
+  // 轮询发现其实已 idle → 校正移除
+  state.onAgentsSnapshot([{ id: "agent-1", status: "idle" }]);
+  assert.ok(!state.anyRunning, "轮询校正移除卡住的 running agent");
+  assert.equal(events.at(-1).event, "AgentStop", "门闩关闭收为等待");
+});
+
+test("agents 轮询：消失的 agent 被移除", () => {
+  const h = makeHarness();
+  const { state } = h.makeState();
+  state.onAgentStatus("agent-1", "running");
+  state.onAgentsSnapshot([]); // 轮询列表为空
+  assert.ok(!state.anyRunning);
+});
+
+test("agents 轮询：与事件状态一致时无副作用", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onAgentStatus("agent-1", "running");
+  const before = events.length;
+  state.onAgentsSnapshot([{ id: "agent-1", status: "running" }]);
+  assert.equal(events.length, before);
+  assert.ok(state.anyRunning);
+});
