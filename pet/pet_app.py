@@ -47,7 +47,7 @@ else:
     APP_DIR = Path(__file__).resolve().parent
 
 CONFIG_FILE = APP_DIR / "pet_config.json"
-USER_PETS_ROOT = Path(os.path.expanduser("~")) / ".dsh"
+# 只扫描桌宠所在目录的 pets/（部署目录），不再扫用户目录（~/.dsh/pets）
 APP_PETS_ROOT = APP_DIR
 
 DEFAULT_CONFIG: dict = {
@@ -909,7 +909,7 @@ class PetWidget(QWidget):
 
     def _refresh_pets(self):
         """重新扫描宠物包并重建宠物子菜单（无需重启桌宠）。"""
-        pets = scan_pets([APP_PETS_ROOT, USER_PETS_ROOT])
+        pets = scan_pets([APP_PETS_ROOT])
         self._pets = pets
         if self._pet is not None and not any(p.name == self._pet.name for p in pets):
             # 当前宠物已被移除：回退到第一个可用宠物
@@ -1156,7 +1156,7 @@ def main() -> int:
     if args.port is not None:
         config["port"] = args.port
 
-    pets = scan_pets([APP_PETS_ROOT, USER_PETS_ROOT])
+    pets = scan_pets([APP_PETS_ROOT])
     pet = pick_pet(pets, config.get("pet"))
     if pet is not None:
         config["pet"] = pet.name

@@ -56,9 +56,8 @@ def _run_case(tmp):
 
     # monkeypatch 扫描根（frozen 判定下 APP_PETS_ROOT 是模块级常量）
     pet_app.APP_PETS_ROOT = tmp
-    pet_app.USER_PETS_ROOT = tmp / "user"  # 指向不存在的目录，避免干扰
 
-    pets = scan_pets([pet_app.APP_PETS_ROOT, pet_app.USER_PETS_ROOT])
+    pets = scan_pets([pet_app.APP_PETS_ROOT])
     check("初始扫描到 1 个宠物", len(pets) == 1, f"({[p.name for p in pets]})")
 
     widget = pet_app.PetWidget(pets[0], dict(pet_app.DEFAULT_CONFIG), pets)
