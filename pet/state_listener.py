@@ -246,9 +246,6 @@ class StateListener(QObject):
 
     # ------------------------------------------------------------------ 外部
 
-    def manual_state(self, state: str):
-        self.state_changed.emit(state, "manual", "manual")
-
     def close(self):
         self._timer.stop()
         self._idle_timer.stop()

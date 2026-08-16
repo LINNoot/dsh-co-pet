@@ -584,12 +584,10 @@ class PetWidget(QWidget):
         self._frame_index %= len(frames)
         self.update()
 
-    def set_state(self, state, detail="", update_bubble=True):
-        """切换动画状态；update_bubble=False 时不更新气泡（手动切换专用，
-        手动切换只切动画，气泡保持业务状态展示）。"""
+    def set_state(self, state, detail=""):
         if state not in self._pixmaps:
             return
-        # 一次性动画播放期间，业务事件先暂存（手动状态除外）
+        # 一次性动画播放期间，业务事件先暂存
         if self._once_next is not None:
             if state not in ("running-left", "running-right", "jumping") and detail != "manual":
                 if state in ("idle", "running", "waiting", "review"):
@@ -608,8 +606,7 @@ class PetWidget(QWidget):
             self._state = state
             self._once_next = once_next
             self._frame_index = 0
-            if update_bubble:
-                self._update_bubble()
+            self._update_bubble()
             self.update()
 
         if once_next is None and not self._dragging and detail != "drag-end":
@@ -838,22 +835,6 @@ class PetWidget(QWidget):
             self._visible_action.setText("显示桌宠")
             self._visible_action.setChecked(True)
 
-    # ------------------------------------------------------------- 手动/切换
-
-    def manual_state(self, state: str):
-        """手动切换（托盘菜单）：只切动画，气泡保持业务状态展示。
-
-        同时清掉残留的一次性动画跳转（_once_next）——否则业务完成动画
-        播放中手动切换后，动画播完会跳回旧状态并触发气泡更新。
-        """
-        if state != "waving":
-            self._completed = False
-            self._completed_timer.stop()
-            self._waiting_timer.stop()
-        self._once_next = None
-        self._pending_business = None
-        self.set_state(state, "manual", update_bubble=False)
-
     def switch_pet(self, pet: Pet):
         self._pet = pet
         self._build_pixmaps()
@@ -954,11 +935,6 @@ class PetWidget(QWidget):
 
         pets_menu = menu.addMenu("宠物")
         self._build_pets_menu(pets_menu)
-
-        state_menu = menu.addMenu("状态（手动）")
-        for state in STANDARD_STATES:
-            action = state_menu.addAction(state)
-            action.triggered.connect(lambda checked=False, s=state: self.manual_state(s))
 
         scale_menu = menu.addMenu("大小")
         for scale in (0.5, 0.75, 1.0, 1.5, 2.0):

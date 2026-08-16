@@ -90,24 +90,6 @@ def _run_case(tmp):
     widget._refresh_circle_business()
     check("恢复后非 hover 再隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
 
-    # 手动切换只切动画，气泡内容不变
-    widget.set_state("running", "任务进行中")
-    bubble_before = widget._bubble._title_label.text()
-    widget.manual_state("failed")
-    check("手动切换气泡不变", widget._bubble._title_label.text() == bubble_before)
-    check("手动切换动画已切", widget._state == "failed")
-    widget.manual_state("idle")
-    check("手动切回 idle 气泡仍不变", widget._bubble._title_label.text() == bubble_before)
-
-    # 业务一次性动画播放中手动切换：清空跳转残留，不跳回旧状态、气泡不变
-    widget._once_next = "waiting"  # 模拟完成动画（waving once）播放中
-    widget.manual_state("jumping")
-    check("手动切换清空 once_next", widget._once_next is None)
-    widget._frame_index = 999  # 模拟当前动画播完
-    widget._next_frame()
-    check("不跳回旧状态", widget._state == "jumping", f"({widget._state})")
-    check("播完气泡仍不变", widget._bubble._title_label.text() == bubble_before)
-
     # 新宠物加入
     shutil.copytree(SRC_PETS / "yuexin", pets_root / "yuexin")
     widget._refresh_pets()
