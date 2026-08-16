@@ -75,6 +75,25 @@ test("用户消息 → UserPromptSubmit（running）", () => {
   assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "帮我重构这个模块" });
 });
 
+test("会话标题：UserPromptSubmit 气泡第一行用标题（侧边栏标题）", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onSessionTitle("审查codex桌宠代码准备移植");
+  state.onSessionEvent(userMessage("帮我重构这个模块"));
+  assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "审查codex桌宠代码准备移植" });
+});
+
+test("会话标题：标题变化时更新", () => {
+  const h = makeHarness();
+  const { state, events } = h.makeState();
+  state.onSessionTitle("旧标题");
+  state.onSessionEvent(userMessage("第一问"));
+  state.onSessionTitle("新标题：优化桌宠");
+  state.onSessionEvent(userMessage("第二问"));
+  assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "新标题：优化桌宠" });
+  assert.equal(state.snapshot().taskTitle, "新标题：优化桌宠");
+});
+
 test("工具调用与 diff → PreToolUse / patch_apply（review）", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();

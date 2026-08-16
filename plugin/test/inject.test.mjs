@@ -10,7 +10,14 @@
 // 用法：node test/inject.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const TMP = path.join(HERE, ".tmp_test", `run_${process.pid}`);
+fs.mkdirSync(TMP, { recursive: true });
 
 const CORDIS_LIB =
   process.env.DSH_CORDIS_LIB ||
@@ -49,7 +56,9 @@ test("带 webServer 服务时插件正常加载并注册路由", async () => {
   const ctx = new Context();
   await ctx.plugin(FakeWebServer); // 先让服务就绪（否则插件 fiber 会一直等待注入）
   const plugin = await import("../index.js");
-  const fiber = ctx.plugin(plugin);
+  // visibility 状态文件用隔离路径（避免读到真实环境 ~/.dsh 的开关状态）
+  const tmpVis = path.join(TMP, "vis.json");
+  const fiber = ctx.plugin(plugin, { visibilityFile: tmpVis });
   await fiber; // 等待加载完成（inject 解析 + apply 执行）
   try {
     assert.ok(ctx.webServer, "webServer 服务可用");

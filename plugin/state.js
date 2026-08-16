@@ -89,6 +89,7 @@ export class PetBridgeState {
     this.thinking = false; // 思考态节流：每段推理流只提示一次"正在思考"
     this.hasActiveGoal = false; // 会话是否有进行中的 goal（有则回合完成不庆祝）
     this.rootAgentIds = new Set(); // 顶层 agent id 集合（agents.roots()，路由判定用）
+    this.taskTitle = ""; // 当前任务会话标题（sessionTitle 服务，气泡第一行黑体）
   }
 
   // ------------------------------------------------------------------ 工具
@@ -275,6 +276,20 @@ export class PetBridgeState {
     return this.rootAgentIds.has(sessionId);
   }
 
+  /**
+   * 会话标题更新（index.js 轮询 sessionTitle 服务时调用）。
+   * 气泡第一行黑体显示任务会话标题（侧边栏那个），如
+   * "审查codex桌宠代码准备移植"；无标题时回退用户消息文本。
+   * @param {string} title 归一化标题（空串表示尚无标题）
+   */
+  onSessionTitle(title) {
+    const t = String(title ?? "").trim();
+    if (t && t !== this.taskTitle) {
+      this.taskTitle = t;
+      this._pushIn("session/title", t);
+    }
+  }
+
   /** agent/error / turn/end(error) 等失败信号。 */
   onFailure(message) {
     this._activity();
@@ -363,7 +378,10 @@ export class PetBridgeState {
           // 用户发话：展示态回到运行
           this._openGate("user/message");
           this.mode = "running";
-          this.onEvent("UserPromptSubmit", clampDetail(firstText(data.content)));
+          // 气泡第一行黑体 = 会话标题（侧边栏显示的那个，如
+          // "审查codex桌宠代码准备移植"）；标题未生成时回退消息文本。
+          const promptText = firstText(data.content);
+          this.onEvent("UserPromptSubmit", clampDetail(this.taskTitle || promptText));
           // 新指令：动作行"收到指令"并重置 AI 总结锁定（原版语义）
           this.onAction("收到指令", "ok", "action");
         }
@@ -552,6 +570,7 @@ export class PetBridgeState {
       anyRunning: this.anyRunning,
       runningAgents: [...this.runningAgents],
       rootAgentIds: [...this.rootAgentIds],
+      taskTitle: this.taskTitle,
       lastActivityAgoMs: now - this.lastActivityAt,
       pendingComplete: Boolean(this.pendingComplete),
       history: this.history.slice(-20),

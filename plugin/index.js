@@ -89,6 +89,9 @@ export function apply(ctx, config = {}) {
 
   // 桌宠开关（Web 按钮 + 持久化；开启=进程运行，关闭=进程退出）
   const visibility = new PetVisibility({
+    file: config.visibilityFile
+      ? path.resolve(config.visibilityFile.replace(/^~[\\/]?/, `${os.homedir()}/`))
+      : undefined,
     channel,
     spawn: launchPet,
     onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
@@ -200,10 +203,13 @@ export function apply(ctx, config = {}) {
   // （社区实测 dsh-kun-like-pet v4：831 次观测 status 类事件 0 次），
   // 轮询校正 runningAgents——补事件丢失、除"卡 running"。
   let agentsService = null;
+  let titleService = null;
   try {
     agentsService = ctx.get("agents");
+    titleService = ctx.get("sessionTitle");
   } catch {
     agentsService = null;
+    titleService = null;
   }
   const agentsPoll = setInterval(() => {
     try {
@@ -217,6 +223,21 @@ export function apply(ctx, config = {}) {
       const roots = agentsService?.roots?.();
       if (Array.isArray(roots)) {
         bridge.setRootAgents(roots.map((a) => a?.id).filter(Boolean));
+      }
+      // 会话标题同步（气泡第一行黑体 = 侧边栏标题）：取任一顶层会话
+      // 的标题（sessionTitle 服务），无标题时保持上次值。
+      if (titleService && Array.isArray(roots) && roots.length > 0) {
+        for (const agent of roots) {
+          try {
+            const snap = titleService.get(agent.session);
+            if (snap?.title) {
+              bridge.onSessionTitle(snap.title);
+              break;
+            }
+          } catch {
+            // 单 agent 标题读取失败：尝试下一个
+          }
+        }
       }
     } catch {
       // 服务暂时不可用：跳过本轮

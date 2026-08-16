@@ -564,7 +564,10 @@ class PetWidget(QWidget):
             self._once_next = None
             self._pending_business = None
 
-        if detail and not detail.startswith("once:") and detail not in ("rollout", "manual", "drag-end"):
+        # 气泡第一行黑体 = 任务会话标题（插件在 UserPromptSubmit 时携带，
+        # source=="user"）；只在用户新指令时更新，防止 AgentStop 等事件
+        # 的 detail（"等待你的输入"等）把标题覆盖掉。
+        if source == "user" and detail and not detail.startswith("once:"):
             self._task_text = detail[:200]
 
         self._from_business = True
