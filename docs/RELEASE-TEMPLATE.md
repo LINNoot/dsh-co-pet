@@ -26,22 +26,27 @@
 
 **前置**：Windows 10/11 + DeepSeek Harness（`dsh web`）。构建 exe 需 Python 3.11+（或使用本 Release 附件）。
 
-**方式一：一键脚本（推荐）**
+**方式一：一键脚本（推荐，无需 Python）**
 
 ```powershell
+# ① 下载本 Release 的附件 DshPet.exe（存到任意位置，如 D:\Downloads\）
+# ② clone 仓库并一键安装（脚本会自动使用你下载的 exe）：
 git clone https://github.com/LINNoot/dsh-co-pet.git
-cd dsh-pet
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+cd dsh-co-pet
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -PetExe D:\Downloads\DshPet.exe
 # 重启 DSH（dsh web）后桌宠随 DSH 自动启动
 ```
 
-**方式二：使用本 Release 的预构建 exe（无需 Python）**
+> 没有 Python 也能装：`-PetExe` 直接指定下载好的 exe，跳过构建。
+> 有 Python 3.11+ 的话可以不带 `-PetExe` 跑，脚本会自动构建（较慢，首次要装 PyInstaller）。
+
+**方式二：自己构建 exe（需要 Python 3.11+）**
 
 ```powershell
-# 下载 DshPet.exe 放到仓库 dist/ 目录，然后：
+git clone https://github.com/LINNoot/dsh-co-pet.git
+cd dsh-co-pet
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-# 或指定路径：
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -PetExe D:\Downloads\DshPet.exe
+# 脚本检测到没有 exe 时自动调用 scripts/build.ps1 构建
 ```
 
 **方式三：手动装插件**

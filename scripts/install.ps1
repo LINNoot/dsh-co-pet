@@ -82,6 +82,14 @@ if (Test-Path $distExe) {
 
 # 桌宠可执行文件：优先用户指定；其次已构建的 exe；否则自动构建（有 Python）
 # 或回退 pythonw 启动；都没有则给出清晰指引。
+# -PetExe 指定的 exe 统一复制进部署目录（桌宠按 exe 所在目录扫描 pets/，
+# exe 留在下载目录会导致"未找到宠物包"）。
+if ($PetExe -and $PetExe -notmatch "pythonw" -and (Test-Path $PetExe)) {
+    $deployedExe = Join-Path $InstallPetTo (Split-Path -Leaf $PetExe)
+    Copy-Item $PetExe $deployedExe -Force
+    $PetExe = $deployedExe
+    Write-Host "    已复制桌宠 exe 到部署目录: $deployedExe"
+}
 if (-not $PetExe) {
     $built = Join-Path $InstallPetTo "DshPet.exe"
     if (Test-Path $built) {
