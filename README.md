@@ -83,7 +83,9 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 
 ## 🐱 宠物包
 
-沿用 Codex 桌宠契约（**不随仓库分发素材**——素材授权通常不明确，请自备）：
+沿用 Codex 桌宠契约。**`pet/pets/yuexin/`（月薪喵）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区，clone 即开箱可用。
+
+自定义宠物：
 
 ```text
 pets/我的宠物/
@@ -97,7 +99,7 @@ pets/我的宠物/
 - **自制**：按契约生成精灵图（8 列 × 9 行）。
 
 宠物包放 `pet/pets/`（应用目录）或 `~/.dsh/pets/`（用户目录，升级不丢）。
-**注意：`pet/pets/` 下没有宠物时，桌宠窗口将无形象可显示**——首次安装后请先放入宠物包。
+**注意：`pet/pets/` 下没有宠物时，桌宠窗口将无形象可显示**。
 
 ## 🔌 通信协议
 
