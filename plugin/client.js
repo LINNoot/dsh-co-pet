@@ -16,24 +16,44 @@ window.__ModuleLoader__.load({
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
 		let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-		const { Button, Tooltip, IconPlayOutline16, IconPauseOutline16, IconLoadingOutline16 } = primitives;
-		/** `pet` namespace dictionaries: the Web switch button. */
+		const { Button, Tooltip } = primitives;
+		/** `pet` namespace dictionaries: the Web power switch button. */
 		const zh = {
-			"toggle.show": "显示桌宠",
-			"toggle.hide": "隐藏桌宠",
-			"toggle.label": "桌宠开关",
+			"toggle.on": "开启桌宠",
+			"toggle.off": "关闭桌宠",
 			"toggle.failed": "操作失败，请重试"
 		};
 		const en = {
-			"toggle.show": "Show pet",
-			"toggle.hide": "Hide pet",
-			"toggle.label": "Pet toggle",
+			"toggle.on": "Turn pet on",
+			"toggle.off": "Turn pet off",
 			"toggle.failed": "Action failed, try again"
 		};
 		/**
-		* Sidebar footer switch: reads /pet-bridge/state once, then toggles via
-		* POST /pet-bridge/toggle. Icon shows the current visibility intent:
-		* pause icon while visible (click = hide), play icon while hidden.
+		* 电源开关图标（内联 SVG，原语库无 power 图标）：圆圈 + 顶部竖线。
+		* active=true（桌宠开启）= 绿色；关闭 = 灰色。
+		*/
+		function PowerIcon({ size = 16, active = false }) {
+			const color = active ? "#22C55E" : "#8A8F98";
+			return react_jsx_runtime.jsxs("svg", {
+				width: size,
+				height: size,
+				viewBox: "0 0 16 16",
+				fill: "none",
+				children: [
+					react_jsx_runtime.jsx("circle", { cx: 8, cy: 8.6, r: 5.6, stroke: color, strokeWidth: 1.7 }),
+					react_jsx_runtime.jsx("path", {
+						d: "M8 3.2 V8.2",
+						stroke: color,
+						strokeWidth: 1.9,
+						strokeLinecap: "round"
+					})
+				]
+			});
+		}
+		/**
+		* Sidebar footer power switch: reads /pet-bridge/state once, then toggles
+		* via POST /pet-bridge/toggle. Green = pet on (click to turn off),
+		* gray = pet off (click to turn on).
 		*/
 		function PetToggleButton(props) {
 			const [visible, setVisible] = react.useState(null);
@@ -68,7 +88,8 @@ window.__ModuleLoader__.load({
 					.finally(() => setBusy(false));
 			};
 			const t = (key) => props.t?.(key) ?? zh[key] ?? key;
-			const label = visible === null ? t("toggle.label") : visible ? t("toggle.hide") : t("toggle.show");
+			const on = visible !== false; // null（未知）按开启处理
+			const label = on ? t("toggle.off") : t("toggle.on");
 			return react_jsx_runtime.jsx(Tooltip, {
 				label,
 				delayMs: 400,
@@ -77,7 +98,7 @@ window.__ModuleLoader__.load({
 					size: "md",
 					"aria-label": label,
 					onClick: toggle,
-					icon: visible === null ? react_jsx_runtime.jsx(IconLoadingOutline16, { size: 16 }) : visible ? react_jsx_runtime.jsx(IconPauseOutline16, { size: 16 }) : react_jsx_runtime.jsx(IconPlayOutline16, { size: 16 })
+					icon: react_jsx_runtime.jsx(PowerIcon, { size: 16, active: on })
 				})
 			});
 		}

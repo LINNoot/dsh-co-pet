@@ -27,7 +27,7 @@ from typing import ClassVar
 
 from pet_loader import STANDARD_STATES, Pet, pil_to_qimage, scan_pets
 from pet_style import FONT_FAMILIES, apply_codex_style
-from PySide6.QtCore import QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QRect, QRectF, QSharedMemory, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -1016,7 +1016,33 @@ def pick_pet(pets: list[Pet], requested: str | None) -> Pet | None:
     return None
 
 
+SHARED_MEM_KEY = "dsh-pet-singleton"
+
+
+def _acquire_singleton() -> QSharedMemory | None:
+    """单实例锁：防止双开（第二个实例 UDP 绑定失败会收不到任何事件）。
+
+    返回持有锁的 QSharedMemory（进程退出自动释放）；已有实例时返回 None。
+    崩溃残留（无活进程的共享段）会被清理后重试，避免"再也起不来"。
+    """
+    shared = QSharedMemory(SHARED_MEM_KEY)
+    if shared.create(1):
+        return shared
+    if shared.attach():
+        shared.detach()
+        if shared.create(1):
+            return shared
+    return None
+
+
 def main() -> int:
+    # 单实例锁：已有桌宠运行时直接退出（双开会抢 UDP 端口，
+    # 第二个实例收不到任何事件，表现为"按钮没用"）。
+    singleton = _acquire_singleton()
+    if singleton is None:
+        _log("已有桌宠实例在运行，本次启动退出（防双开）")
+        return 0
+
     parser = argparse.ArgumentParser(description="DSH 桌宠")
     parser.add_argument("--pet", default=None, help="宠物包名（pets 目录下的文件夹名）")
     parser.add_argument("--scale", type=float, default=None, help="显示缩放倍率")
