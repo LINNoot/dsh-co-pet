@@ -73,12 +73,12 @@ BUBBLE_LINE_H = 18              # 摘要行高（13px）
 BUBBLE_GAP = 0                  # 标题与摘要间距
 BUBBLE_SHADOW_M = 20            # 投影外扩边距
 BUBBLE_SHADOW_EXTRA = 6         # 底部投影额外边距
-BUBBLE_CIRCLE_D = 28            # 状态圆圈直径
+BUBBLE_CIRCLE_D = 36            # 状态圆圈直径（略大，与右侧圆弧同心）
 BUBBLE_CIRCLE_GAP = 6           # 圆圈与文字间距
 
 
 class StatusCircle(QLabel):
-    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号（原版复刻）。
+    """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号 / 暂停灰方块 / 恢复三角。
 
     原版交互：hover 时出现同色光晕（外扩 4px、alpha 110），
     非 hover 时本体缩小 6px；点击（非隐藏态）发出 clicked 信号。
@@ -89,10 +89,15 @@ class StatusCircle(QLabel):
     MODE_HIDDEN = "hidden"
     MODE_DONE = "done"
     MODE_ERROR = "error"
+    MODE_PAUSE = "pause"
+    MODE_RESUME = "resume"
 
     COLORS: ClassVar[dict[str, tuple[QColor, QColor]]] = {
         MODE_DONE: (QColor("#C7F0D4"), QColor("#22C55E")),
         MODE_ERROR: (QColor("#FDE2E2"), QColor("#F04438")),
+        # 暂停/恢复：浅灰底 + 深灰图案（底浅于图案，有辨识度）
+        MODE_PAUSE: (QColor("#E9E9E9"), QColor("#5F6672")),
+        MODE_RESUME: (QColor("#E9E9E9"), QColor("#5F6672")),
     }
 
     def __init__(self, parent=None):
@@ -171,6 +176,21 @@ class StatusCircle(QLabel):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(fg)
             painter.drawEllipse(QRectF(12.5, 18.5, 3.0, 3.0))
+        elif self._mode == self.MODE_PAUSE:
+            # 暂停：灰色方块（居中，略小于圆）
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(fg)
+            painter.drawRoundedRect(QRectF(10.0, 10.0, 8.0, 8.0), 1.5, 1.5)
+        elif self._mode == self.MODE_RESUME:
+            # 恢复：灰色右向三角
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(fg)
+            path = QPainterPath()
+            path.moveTo(11.0, 8.5)
+            path.lineTo(11.0, 19.5)
+            path.lineTo(19.5, 14.0)
+            path.closeSubpath()
+            painter.drawPath(path)
         painter.end()
 
 
@@ -201,8 +221,12 @@ class Bubble(QWidget):
       paused=灰）同一行（标题与短语间一个空格）；
     - 第二行（可选）：摘要（13px，颜色默认跟随状态色，可传入 body_color），
       单行，超宽逐字截断；
-    - 右侧状态圆圈垂直居中；宽高随内容自适应（上限 480px）。
+    - 右侧状态圆圈与右侧圆弧同心；宽高随内容自适应（上限 480px）；
+    - 鼠标悬停气泡时高亮暂停圆圈（hover 时可见，移开隐藏）。
     """
+
+    clicked = Signal()
+    hoverChanged = Signal(bool)  # 鼠标进入/离开气泡（控制暂停圆圈显隐）
 
     COLOR_OK = QColor("#10A37F")
     COLOR_WARN = QColor("#FFB000")
@@ -224,6 +248,7 @@ class Bubble(QWidget):
         self._summary = ""
         self._status_color = self.COLOR_OK
         self._body_color = self.COLOR_OK
+        self._hovered = False
 
         # 阴影胶囊（底层）
         self._shadow_card = BubbleCard(self)
@@ -257,6 +282,20 @@ class Bubble(QWidget):
         body_font.setFamilies(FONT_FAMILIES)
         self._body_label.setFont(body_font)
         self._body_label.setWordWrap(False)
+
+    # ------------------------------------------------------------- hover
+
+    def enterEvent(self, event):
+        if not self._hovered:
+            self._hovered = True
+            self.hoverChanged.emit(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hovered:
+            self._hovered = False
+            self.hoverChanged.emit(False)
+        super().leaveEvent(event)
 
     # ------------------------------------------------------------- 排版
 
@@ -386,6 +425,23 @@ def save_config(path, config) -> None:
         pass
 
 
+COMMAND_FILE = Path(os.path.expanduser("~")) / ".dsh" / "dsh-pet-command.json"
+
+
+def _write_command(command: dict) -> None:
+    """原子写用户命令文件（~/.dsh/dsh-pet-command.json），插件轮询执行。
+
+    命令：{"cmd": "pause"|"resume", "ts": <epoch>}
+    """
+    try:
+        COMMAND_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(COMMAND_FILE) + ".tmp"
+        Path(tmp).write_text(json.dumps(command), encoding="utf-8")
+        Path(tmp).replace(COMMAND_FILE)
+    except OSError:
+        _log(f"命令写入失败: {COMMAND_FILE}")
+
+
 class PetWidget(QWidget):
     """桌宠窗口：动画播放、拖拽、气泡、托盘菜单。"""
 
@@ -424,7 +480,9 @@ class PetWidget(QWidget):
         self._bubble = Bubble()
         self._circle = self._bubble.circle
         self._circle.clicked.connect(self._on_circle_clicked)
+        self._bubble.hoverChanged.connect(self._on_bubble_hover)
         self._completed = False
+        self._paused = False  # 用户点击暂停圆圈（任务暂停中）
         self._circle_business = StatusCircle.MODE_HIDDEN
         self._show_status_text = bool(config.get("show_status_text", True))
         self._show_bubble = bool(config.get("show_bubble", True))
@@ -612,7 +670,7 @@ class PetWidget(QWidget):
             status = "error"
         elif self._state == "running":
             title = self._task_text or "正在执行任务"
-            phrase = self._status_title()
+            phrase = "已暂停" if self._paused else self._status_title()
             status = self._action_status
             if self._has_ai_summary:
                 body = self._ai_summary_text
@@ -705,6 +763,21 @@ class PetWidget(QWidget):
     def _on_circle_clicked(self):
         if self._completed:
             self._close_completed()
+            return
+        # 任务进行中点击暂停/恢复圆圈：写命令文件，插件轮询执行
+        if self._circle.mode() == StatusCircle.MODE_PAUSE:
+            self._paused = True
+            _write_command({"cmd": "pause", "ts": time.time()})
+            _log("请求暂停任务")
+        elif self._circle.mode() == StatusCircle.MODE_RESUME:
+            self._paused = False
+            _write_command({"cmd": "resume", "ts": time.time()})
+            _log("请求恢复任务")
+        self._update_bubble()
+
+    def _on_bubble_hover(self, hovered: bool):
+        # 鼠标进出气泡：刷新圆圈显隐（暂停按钮 hover 可见）
+        self._refresh_circle_business()
 
     def _close_completed(self):
         self._completed = False
@@ -724,6 +797,11 @@ class PetWidget(QWidget):
             self._circle_business = StatusCircle.MODE_DONE
         elif self._state == "failed":
             self._circle_business = StatusCircle.MODE_ERROR
+        elif self._state in ("running", "review") and self._bubble._hovered:
+            # 任务进行中 + 鼠标悬停气泡：显示暂停/恢复圆圈（默认隐藏）
+            self._circle_business = (
+                StatusCircle.MODE_RESUME if self._paused else StatusCircle.MODE_PAUSE
+            )
         else:
             self._circle_business = StatusCircle.MODE_HIDDEN
         self._circle.set_mode(self._circle_business)
