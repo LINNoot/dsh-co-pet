@@ -45,9 +45,39 @@ export function apply(ctx, config = {}) {
     logger,
   });
 
-  // 桌宠可见性（Web 开关按钮 + 持久化）
+  // —— 桌宠进程生命周期（autoLaunch / Web 开关共用）——
+  let petProc = null;
+  let disposing = false; // DSH 卸载中：kill 桌宠不算"非主动退出"，不同步开关状态
+  const petPath = config.petPath || process.env.DSH_PET_PATH;
+  const launchPet = () => {
+    if (!petPath || petProc && !petProc.killed) return petProc;
+    try {
+      const proc = spawn(path.resolve(petPath), config.petArgs ?? [], {
+        stdio: "ignore",
+        windowsHide: true,
+        detached: false,
+      });
+      proc.on("error", (err) => {
+        logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
+      });
+      proc.on("exit", () => {
+        petProc = null;
+        // 桌宠退出（手动退出/崩溃/被关闭）：同步 GUI 开关状态；
+        // DSH 自身卸载时的 kill 除外（下次启动仍按上次意图恢复）。
+        if (!disposing) visibility.onPetExited();
+      });
+      petProc = proc;
+      return proc;
+    } catch (err) {
+      logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
+      return null;
+    }
+  };
+
+  // 桌宠开关（Web 按钮 + 持久化；开启=进程运行，关闭=进程退出）
   const visibility = new PetVisibility({
     channel,
+    spawn: launchPet,
     onLog: (msg) => logger.info?.(`[dsh-pet-bridge] ${msg}`),
   });
   visibility.load();
@@ -145,7 +175,6 @@ export function apply(ctx, config = {}) {
   // —— Web GUI 控制路由（同源 HTTP，由 client.js 按钮调用）——
   // inject 已声明 webServer（见文件头），此处防御性判断保留：即使将来
   // 有人把 inject 改为可选，也能降级为仅 UDP 控制而不至于加载失败。
-  let petStartupTimer = null;
   if (ctx.webServer) {
     ctx.effect?.(
       () => {
@@ -175,11 +204,11 @@ export function apply(ctx, config = {}) {
                   return;
                 }
                 if (req.method === "POST" && p === "/pet-bridge/show") {
-                  respond(200, { visible: visibility.setVisible(true) });
+                  respond(200, { visible: visibility.setEnabled(true) });
                   return;
                 }
                 if (req.method === "POST" && p === "/pet-bridge/hide") {
-                  respond(200, { visible: visibility.setVisible(false) });
+                  respond(200, { visible: visibility.setEnabled(false) });
                   return;
                 }
                 respond(404, { error: "not found" });
@@ -200,30 +229,9 @@ export function apply(ctx, config = {}) {
     logger.warn?.("[dsh-pet-bridge] webServer 服务不可用，Web 开关按钮将无法工作（仅 UDP 控制可用）");
   }
 
-  // —— 随 DSH 启动桌宠 ——
-  let petProc = null;
-  const petPath = config.petPath || process.env.DSH_PET_PATH;
-  if (config.autoLaunch !== false && petPath) {
-    try {
-      petProc = spawn(path.resolve(petPath), config.petArgs ?? [], {
-        stdio: "ignore",
-        windowsHide: true,
-        detached: false,
-      });
-      petProc.on("error", (err) => {
-        logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
-      });
-    } catch (err) {
-      logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
-    }
-    // 上次退出时桌宠是隐藏的：桌宠进程刚启动（默认显示），稍后应用持久化状态。
-    // 延迟 2s 等桌宠完成 UDP 绑定（状态文件通道兜底，确保送达）。
-    if (!visibility.current()) {
-      petStartupTimer = setTimeout(() => {
-        visibility.setVisible(false);
-      }, 2000);
-      petStartupTimer.unref?.();
-    }
+  // —— 随 DSH 启动桌宠（仅当上次开关状态为"开启"）——
+  if (config.autoLaunch !== false && visibility.current()) {
+    launchPet();
   }
 
   // 清理：cordis 4 没有 "dispose" 事件——插件卸载清理必须用 ctx.effect
@@ -231,9 +239,9 @@ export function apply(ctx, config = {}) {
   // 定时器/桌宠进程在热卸载时泄漏）。
   ctx.effect(
     () => () => {
+      disposing = true; // 主动收尾：kill 桌宠不触发开关状态同步
       clearInterval(ticker);
       clearInterval(heartbeat);
-      if (petStartupTimer) clearTimeout(petStartupTimer);
       bridge.dispose();
       channel.close();
       if (petProc && !petProc.killed) {

@@ -123,14 +123,16 @@ DSH 的 Web 界面支持客户端插件（`package.json` 声明 `dsh.client` +
 `exports["./client"]`，由 dsh-client-modules 自动发现并 serve）。
 
 - `plugin/client.js`：浏览器端 bundle，在侧边栏底部
-  （`sidebar.footer.action` 插槽）注册桌宠开关按钮；图标/文案随
-  可见性切换（暂停=可见、播放=隐藏）；
+  （`sidebar.footer.action` 插槽）注册桌宠电源开关按钮；图标/文案随
+  开关状态切换（绿色=开启、灰色=关闭，内联 SVG 电源符号）；
 - 按钮经同源 HTTP 调用宿主路由（`plugin/index.js` 注册于
   `ctx.webServer`）：`GET /pet-bridge/state`、`POST /pet-bridge/toggle`
   （另有 `/show`、`/hide`）；
-- `plugin/visibility.js`：可见性状态机——持久化到
-  `~/.dsh/dsh-pet-visibility.json`，通过 `pet/visibility` 事件
-  （UDP + 状态文件双通道）通知桌宠 show/hide；DSH 重启后自动恢复
-  上次状态（桌宠启动延迟 2s 应用）；
-- 桌宠端：`state_listener.py` 识别 `pet/visibility` → `visibility_changed`
-  信号 → `pet_app.py` 窗口显示/隐藏（托盘菜单同步，"显示/隐藏桌宠"项）。
+- `plugin/visibility.js`：开关状态机——**开启 = 桌宠进程运行
+  （spawn），关闭 = 桌宠进程退出（`pet/quit` 事件，桌宠自行退出）**；
+  持久化到 `~/.dsh/dsh-pet-visibility.json`（字段 `enabled`，兼容旧
+  `visible`），DSH 重启后恢复上次意图（关闭状态不随 DSH 自动启动）；
+- 桌宠进程退出（手动退出/崩溃）会自动同步按钮为关闭（`onPetExited`）；
+  插件自身卸载时 kill 桌宠不改变开关状态（下次启动仍按上次意图恢复）；
+- 桌宠端：`state_listener.py` 识别 `pet/quit` → `quit_requested` 信号 →
+  `app.quit()`；`pet/visibility` 信号保留用于窗口显隐（托盘菜单项）。
