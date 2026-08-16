@@ -66,7 +66,7 @@ dsh plugin --profile web add <仓库路径>/plugin
 
 ### 🐱 宠物包
 
-- `pet/pets/yuexin/`（**月薪喵**）已随仓库分发，clone 即用，仅作为效果演示
+- `pet/pets/yuexinmiao/`（**月薪喵**）已随仓库分发，clone 即用，仅作为效果演示
   （注：此宠物来源：[codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区）
 - 自定义宠物：按 Codex 契约放入 `pet/pets/<名称>/`（8 列 × 9 行精灵图）
 
@@ -74,11 +74,11 @@ dsh plugin --profile web add <仓库路径>/plugin
 
 - 桌宠窗口与脚本为 **Windows 优先**（Linux/macOS 未做适配工作，后续会跟进，暂时不确定效果）
 - 中断功能为"停当前回合"（DSH 无 agent 级暂停/恢复 API，中断后保留输入消息，可再发消息继续）
-- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）（可以丢给 AI 修复 :D）
+- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）（可以丢给 AI 修复 :D
 
 ### 📜 License
 
-MIT（代码）。宠物素材 `pet/pets/yuexin/` 来自开源社区，仅供学习交流（见包内说明）。
+MIT（代码）。宠物素材 `pet/pets/yuexinmiao/` 来自开源社区，仅供学习交流（见包内说明）。
 
 ---
 
