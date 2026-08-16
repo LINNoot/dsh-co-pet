@@ -54,11 +54,13 @@ export class PetBridgeState {
 
     // 事件/动作历史（环形缓冲）：诊断快照用，用户复现问题时
     // 可以从 ~/.dsh/dsh-pet-state.debug.json 直接看到插件收到了什么、发了什么。
+    // kind: "event"/"action"=发出（桌宠侧）；"in"=收到（agent/status、会话事件）。
     this.history = [];
     const push = (entry) => {
       this.history.push(entry);
       if (this.history.length > 40) this.history.shift();
     };
+    this._pushIn = (name, detail = "") => push({ ts: this.now(), kind: "in", name, detail });
     this.onEvent = (event, detail) => {
       push({ ts: this.now(), kind: "event", name: event, detail });
       opts.onEvent?.(event, detail);
@@ -178,6 +180,7 @@ export class PetBridgeState {
    * @param {string} status 'running' | 'idle'
    */
   onAgentStatus(agentId, status) {
+    this._pushIn("agent/status", `${agentId} → ${status}`);
     if (status === "running") {
       const wasIdle = this.runningAgents.size === 0;
       this.runningAgents.add(agentId);
@@ -214,6 +217,7 @@ export class PetBridgeState {
    * @param {string} type 会话事件类型（turn/start、step/start、assistant/chunk 等）
    */
   onActivity(type) {
+    this._pushIn(`activity:${type}`);
     this._touch();
   }
 
@@ -235,6 +239,7 @@ export class PetBridgeState {
   /** 会话事件（仅顶层会话；index.js 已过滤）。 */
   onSessionEvent(event) {
     const { type, data } = event;
+    this._pushIn(`session:${type}`, String(data?.reason?.kind ?? data?.name ?? data?.operation ?? ""));
     // 任何会话事件都算活动信号：长推理（assistant/chunk）、子代理运行期间、
     // 工具长调用等场景都靠它防止空闲兜底误触发（90s 无活动才回 idle）。
     this._touch();
