@@ -121,7 +121,8 @@ if ($RemovePetDir) {
         if (Test-Path $petsDst) {
             $item = Get-Item $petsDst -Force -ErrorAction SilentlyContinue
             if ($null -ne $item -and $item.LinkType -eq "Junction") {
-                Remove-Item $petsDst -Force
+                # PS 5.1 对 junction 的 Remove-Item -Force 仍会弹确认框，显式关闭
+                Remove-Item $petsDst -Force -Confirm:$false
                 Write-Host "    已解除 pets 链接（源码 pet/pets/ 保留）"
             }
         }

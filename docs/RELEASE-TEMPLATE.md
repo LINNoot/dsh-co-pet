@@ -24,6 +24,10 @@
 
 **前置**：Windows 10/11 + DeepSeek Harness（`dsh web`，需已运行过一次）。
 
+> **桌宠装在哪里？** 安装脚本把桌宠**部署到 `%LOCALAPPDATA%\dsh-pet`**（Windows 应用数据目录），
+> 你 clone 的仓库目录只是源码——不要期望桌宠出现在 clone 文件夹里。
+> 想改部署位置用 `-InstallPetTo` 参数指定。卸载时用 `scripts/uninstall.ps1 -RemovePetDir`。
+
 **方式一：一键脚本（推荐，无需 Python）**
 
 ```powershell

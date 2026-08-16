@@ -131,9 +131,10 @@ if (Test-Path $petsSrc) {
     if (Test-Path $petsDst) {
         $item = Get-Item $petsDst -Force
         if ($item.LinkType -eq "Junction") {
-            Remove-Item $petsDst -Force
+            # PS 5.1 对 junction 的 Remove-Item -Force 仍会弹确认框，显式关闭
+            Remove-Item $petsDst -Force -Confirm:$false
         } else {
-            Remove-Item $petsDst -Recurse -Force
+            Remove-Item $petsDst -Recurse -Force -Confirm:$false
         }
     }
     New-Item -ItemType Junction -Path $petsDst -Value $petsSrc | Out-Null
