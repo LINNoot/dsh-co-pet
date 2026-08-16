@@ -39,6 +39,62 @@ if (-not $InstallPetTo) { $InstallPetTo = Join-Path $env:LOCALAPPDATA "dsh-pet" 
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
+# ---------- 0. 前置检查（preflight）----------
+# 明确告知全新用户缺什么、怎么补，避免装到一半才失败。
+$profileDir = ""
+if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
+else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
+
+Write-Step "前置检查"
+$preflightOk = $true
+
+# ① DSH 必须已安装且跑过一次（profile 存在，插件才能注册进去）
+if (-not (Test-Path $profileDir)) {
+    Write-Host "    [缺] 未找到 DSH profile: $profileDir" -ForegroundColor Red
+    Write-Host "         请先安装并启动一次 DeepSeek Harness（dsh web），" -ForegroundColor Yellow
+    Write-Host "         确认 ~/.dsh/profiles/$Profile 生成后再运行本脚本。" -ForegroundColor Yellow
+    $preflightOk = $false
+} else {
+    Write-Host "    [OK] DSH profile: $profileDir" -ForegroundColor Green
+}
+
+# ② 桌宠可执行文件：-PetExe 指定 或 部署目录已有 或 本机可构建（Python 3.11+）
+$hasExe = $false
+if ($PetExe -and (Test-Path $PetExe)) {
+    $hasExe = $true
+    Write-Host "    [OK] 桌宠 exe（-PetExe）: $PetExe" -ForegroundColor Green
+} elseif (Test-Path (Join-Path $InstallPetTo "DshPet.exe")) {
+    $hasExe = $true
+    Write-Host "    [OK] 桌宠 exe（部署目录已有）" -ForegroundColor Green
+} elseif (Test-Path (Join-Path $RepoRoot "dist\DshPet.exe")) {
+    $hasExe = $true
+    Write-Host "    [OK] 桌宠 exe（仓库 dist/）" -ForegroundColor Green
+} else {
+    # 无 exe：检查能否自动构建（Python 3.11+）或 pythonw 直启
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    $py3 = $false
+    if ($pyLauncher) {
+        $probe = & py -3 -c "import sys; print(1 if sys.version_info >= (3, 11) else 0)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $probe -match "1") { $py3 = $true }
+    }
+    $pythonw = Get-Command pythonw.exe -ErrorAction SilentlyContinue
+    if ($py3 -or $pythonw) {
+        Write-Host "    [OK] 无现成 exe，将自动构建（Python 3.11+）或 pythonw 直启" -ForegroundColor Green
+    } else {
+        Write-Host "    [缺] 未找到 DshPet.exe，且本机无 Python 3.11+/pythonw 可自动构建" -ForegroundColor Red
+        Write-Host "         请从 GitHub Releases 下载 DshPet.exe，用 -PetExe 指定路径后重跑：" -ForegroundColor Yellow
+        Write-Host "         powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -PetExe D:\Downloads\DshPet.exe" -ForegroundColor Yellow
+        $preflightOk = $false
+    }
+}
+
+if (-not $preflightOk) {
+    Write-Host ""
+    Write-Host "前置检查未通过，安装中止。请按上方提示补齐后重试。" -ForegroundColor Red
+    exit 1
+}
+Write-Host "    前置检查通过，继续安装…" -ForegroundColor Green
+
 # ---------- 1. 部署桌宠 ----------
 Write-Step "部署桌宠到 $InstallPetTo"
 New-Item -ItemType Directory -Force -Path $InstallPetTo | Out-Null
@@ -147,8 +203,6 @@ Write-Host "    桌宠启动器: $PetExe"
 # ---------- 2. 安装 DSH 插件 ----------
 Write-Step "安装 dsh-pet-bridge 到 profile '$Profile'"
 $pluginAbs = [System.IO.Path]::GetFullPath($PluginDir)
-if ($env:DSH_HOME) { $profileDir = Join-Path (Join-Path $env:DSH_HOME "profiles") $Profile }
-else { $profileDir = Join-Path (Join-Path $env:USERPROFILE ".dsh\profiles") $Profile }
 $dshCmd = Get-Command dsh -ErrorAction SilentlyContinue
 if ($dshCmd) {
     & dsh plugin --profile $Profile add $pluginAbs

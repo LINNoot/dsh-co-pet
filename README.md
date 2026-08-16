@@ -25,13 +25,17 @@
 | Python 3.11+（可选） | 仅自动构建 `DshPet.exe` 需要；也可使用 GitHub Release 的预构建 exe（`install.ps1 -PetExe <路径>`） |
 | 宠物包素材 | 自带 `yuexinmiao`（月薪喵），可自定义（见下文"宠物包"）；其余素材需自备 |
 
-### 方式一：一键安装脚本（Windows）
+### 方式一：一键安装脚本（Windows，无需 Python）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+# ① 从 Releases 页面下载 DshPet.exe 附件（存到任意位置，如 D:\Downloads\）
+# ② 一键安装（-PetExe 直接指定下载好的 exe，跳过构建）：
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -PetExe D:\Downloads\DshPet.exe
 ```
 
-脚本自动完成：① 构建 `DshPet.exe`（检测 venv → `py` 启动器 → 系统 Python，没有则报错并给出指引）；② 部署到 `%LOCALAPPDATA%\dsh-pet`；③ 注册 `dsh-pet-bridge` 到 web profile（`dsh` 命令不可用时自动改写 profile 文件）；④ 写入 petPath 覆盖；⑤ 创建桌面快捷方式。
+脚本自动完成：① 部署到 `%LOCALAPPDATA%\dsh-pet`（含宠物目录链接）；② 注册 `dsh-pet-bridge` 到 web profile（`dsh` 命令不可用时自动改写 profile 文件）；③ 写入 petPath 覆盖；④ 创建桌面快捷方式。
+
+**前置条件：本机已安装 DeepSeek Harness 并至少运行过一次 `dsh web`**（脚本需要 `~/.dsh/profiles/web` 存在才能注册插件）。有 Python 3.11+ 时可以不带 `-PetExe` 跑，脚本会自动构建 exe（较慢，首次要装 PyInstaller）。
 
 **重启 DSH（`dsh web`）后生效**，桌宠随 DSH 自动启动。
 
