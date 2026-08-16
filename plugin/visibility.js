@@ -72,8 +72,10 @@ export class PetVisibility {
       this.channel.send("pet/quit", "");
       // 关键：紧接着用无害事件覆盖状态文件——否则下次启动桌宠时，
       // 第一次文件轮询会读到残留的 pet/quit 而立即退出（"闪一下就
-      // 没了，怎么点都不行"）。UDP 是实时通道不受影响。
-      this.channel.send("agent_message", "");
+      // 没了"）。注意覆盖事件必须是词汇表里的空闲态事件（SessionStart
+      // → idle）；agent_message 在桌宠词汇表里是 running，会让下次
+      // 启动的桌宠"莫名其妙进入 running"。
+      this.channel.send("SessionStart", "DSH 已启动");
       this.onLog("桌宠 → 关闭");
     }
     return this.enabled;

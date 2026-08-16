@@ -43,12 +43,16 @@ test("setEnabled(true) → 持久化 + 启动桌宠进程", () => {
   assert.equal(data.enabled, true);
 });
 
-test("setEnabled(false) → 持久化 + pet/quit + 无害事件覆盖文件（防残留）", () => {
+test("setEnabled(false) → 持久化 + pet/quit + SessionStart 覆盖文件（防残留/防带跑）", () => {
   const file = path.join(TMP, "b.json");
   const { vis, sent, spawned } = makeVis({ file, initial: true });
   vis.setEnabled(false);
   assert.equal(sent.at(-2).event, "pet/quit", "先发退出指令");
-  assert.equal(sent.at(-1).event, "agent_message", "随后覆盖状态文件（防止下次启动读到残留 quit）");
+  assert.equal(
+    sent.at(-1).event,
+    "SessionStart",
+    "随后覆盖状态文件（空闲态事件；agent_message 会把下次启动的桌宠带进 running）",
+  );
   assert.equal(spawned.length, 0, "关闭不应 spawn");
   const data = JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(data.enabled, false);

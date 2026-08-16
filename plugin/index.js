@@ -67,6 +67,19 @@ export function apply(ctx, config = {}) {
         if (!disposing) visibility.onPetExited();
       });
       petProc = proc;
+      // 桌宠刚启动：延迟同步当前状态（等它完成 UDP 绑定；状态文件通道兜底）。
+      // 先发 SessionStart（idle 基准），再按当前 mode 发对应事件——
+      // 否则新桌宠只能等 30s 心跳才知道状态，且状态文件残留的
+      // agent_message 会把桌宠带进 running。
+      setTimeout(() => {
+        if (disposing || petProc !== proc) return; // 已被清理或换新实例
+        channel.send("SessionStart", "DSH 已启动");
+        if (bridge.mode === "running" || bridge.mode === "review") {
+          channel.send("AgentStart", "任务进行中");
+        } else if (bridge.mode === "waiting") {
+          channel.send("AgentStop", "等待你的输入");
+        }
+      }, 1500).unref?.();
       return proc;
     } catch (err) {
       logger.warn?.(`[dsh-pet-bridge] 启动桌宠失败: ${err.message}`);
