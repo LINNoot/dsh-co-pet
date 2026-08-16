@@ -29,7 +29,7 @@
 **方式一：一键脚本（推荐）**
 
 ```powershell
-git clone https://github.com/<你的用户名>/dsh-pet.git
+git clone https://github.com/LINNoot/dsh-co-pet.git
 cd dsh-pet
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 # 重启 DSH（dsh web）后桌宠随 DSH 自动启动
