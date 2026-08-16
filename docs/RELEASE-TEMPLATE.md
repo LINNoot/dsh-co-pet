@@ -20,7 +20,8 @@
 - **Web GUI 电源开关**：侧边栏按钮，关闭=退出进程、开启=重新拉起，状态持久化
 - **完整交互**：拖拽、悬浮、托盘菜单（宠物/大小/置顶/气泡开关）
 - **零网络零 LLM 成本**：状态 → 动画全确定性推导
-- **自定义桌宠**：高度兼容codex及其开源社区桌宠，桌宠格式可参考codex
+- **自定义桌宠**：高度兼容 codex 及其开源社区桌宠，桌宠格式可参考 codex
+
 ### 📦 安装
 
 **前置**：Windows 10/11 + DeepSeek Harness（`dsh web`）。构建 exe 需 Python 3.11+（或使用本 Release 附件）。
@@ -65,18 +66,15 @@ dsh plugin --profile web add <仓库路径>/plugin
 
 ### 🐱 宠物包
 
-- `pet/pets/yuexin/`（**月薪喵**）已随仓库分发，clone 即用（来源：[codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区）
-- 自定义宠物：按 Codex 契约放入 `pet/pets/<名称>/`（8 列 × 9 行精灵图），或放 `~/.dsh/pets/`
+- `pet/pets/yuexin/`（**月薪喵**）已随仓库分发，clone 即用，仅作为效果演示
+  （注：此宠物来源：[codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区）
+- 自定义宠物：按 Codex 契约放入 `pet/pets/<名称>/`（8 列 × 9 行精灵图）
 
 ### ⚠️ 已知限制
 
-- 桌宠窗口与脚本为 **Windows 优先**（Linux/macOS 未适配）
+- 桌宠窗口与脚本为 **Windows 优先**（Linux/macOS 未做适配工作，后续会跟进，暂时不确定效果）
 - 中断功能为"停当前回合"（DSH 无 agent 级暂停/恢复 API，中断后保留输入消息，可再发消息继续）
-- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）
-
-### 🧪 测试
-
-插件 58 项单测 + 桌宠 4 套件（冒烟/气泡/刷新/样式），全过。
+- 若 `npx dsh web` 启动很慢（>1 分钟），检查 `~/.npmrc` 是否残留死代理配置（见 README 故障排查）（可以丢给 AI 修复 :D）
 
 ### 📜 License
 
@@ -93,15 +91,6 @@ MIT（代码）。宠物素材 `pet/pets/yuexin/` 来自开源社区，仅供学
 - 完成展示：绿勾圆圈 + 完成气泡（普通任务与 goal 均支持，8s 去抖）
 - 中断圆圈：hover 显隐、同心定位、点击中断当前任务
 - 单实例锁（防双开）、运行日志落盘 `~/.dsh/dsh-pet.log`、诊断快照 `~/.dsh/dsh-pet-state.debug.json`
-
-### 修复
-- 顶层会话被误判为子代理导致 AI 总结/完成不触发（改用 `agents.roots()` 判定）
-- agent/status 事件丢失导致"卡 running/莫名 running"（`agents` 轮询校正）
-- 任务完成瞬间气泡闪断（waiting 态保留气泡）
-- 授权通过后状态未恢复 running 导致心跳停发、桌宠误判 idle
-- 空闲兜底 90s → 5 分钟（长静默任务不误判）
-- 关闭桌宠后状态文件残留导致下次启动闪退/误进 running
-- 气泡图案在加大圆圈上偏移（按直径动态居中）
 
 ### 架构
 - 状态机分层：运行门闩（agent/status + 轮询）与展示态（结论事件）分离
