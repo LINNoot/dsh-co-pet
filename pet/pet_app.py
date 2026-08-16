@@ -481,6 +481,9 @@ class PetWidget(QWidget):
 
         self._pet_actions: list[tuple[Pet, QAction]] = []
         self._scale_actions: list[tuple[float, QAction]] = []
+        self._pets_menu: QMenu | None = None  # _build_menu 中创建并持久持有
+        # （避免通过 _menu.actions()[0].menu() 链式取：临时 QAction 包装被 GC 时
+        #   会连带销毁 C++ QMenu 及其子 actions，导致后续 setChecked 崩溃）
 
         self._apply_window_flags()
         self._build_pixmaps()
@@ -873,6 +876,16 @@ class PetWidget(QWidget):
             return QIcon()
         return QIcon(frames[0])
 
+    def _enforce_pet_check(self, pet, toggled):
+        """勾选状态强制与实际宠物一致：菜单点击产生的 toggle 会被纠正。
+
+        switch_pet 里的 refresh_checks 已恢复勾选；此处兜底处理
+        "点击当前项 → toggle 掉勾"的信号时序竞争。
+        """
+        expected = self._pet is not None and pet.name == self._pet.name
+        if toggled != expected:
+            QTimer.singleShot(0, self.refresh_checks)
+
     def _build_pets_menu(self, pets_menu: QMenu):
         """构建（或重建）宠物子菜单：宠物列表 + 刷新入口。"""
         pets_menu.clear()
@@ -884,6 +897,9 @@ class PetWidget(QWidget):
                 action.setChecked(self._pet is not None and pet.name == self._pet.name)
                 self._pet_actions.append((pet, action))
                 action.triggered.connect(lambda checked=False, p=pet: self.switch_pet(p))
+                # 菜单点击会自动 toggle 勾选；强制勾选与实际宠物一致
+                # （防止"点一下勾出现、再点勾消失"与真实状态脱节）
+                action.toggled.connect(lambda checked, p=pet: self._enforce_pet_check(p, checked))
         else:
             action = pets_menu.addAction("（未找到宠物包）")
             action.setEnabled(False)
@@ -907,17 +923,15 @@ class PetWidget(QWidget):
             self._resize_to_pet()
             self.pet_changed.emit()
             self.update()
-        actions = self._menu.actions()
-        if actions:
-            pets_menu = actions[0].menu()
-            if pets_menu is not None:
-                self._build_pets_menu(pets_menu)
+        if self._pets_menu is not None:
+            self._build_pets_menu(self._pets_menu)
         self.refresh_checks()
 
     def _build_menu(self) -> QMenu:
         menu = QMenu(self)
 
         pets_menu = menu.addMenu("宠物")
+        self._pets_menu = pets_menu  # 持久持有，防止链式取用时的 GC 销毁
         self._build_pets_menu(pets_menu)
 
         scale_menu = menu.addMenu("大小")

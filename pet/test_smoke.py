@@ -51,8 +51,8 @@ def send_udp_legacy(port, event, detail=""):
 def main():
     # ---------- pet_loader ----------
     pets = scan_pets([HERE])
-    check("scan_pets 找到 yuexinmiao", any(p.name == "yuexinmiao-mix" for p in pets))
-    pet = next((p for p in pets if p.name == "yuexinmiao-mix"), None)
+    check("scan_pets 找到 yuexinmiao", any(p.name == "yuexinmiao" for p in pets))
+    pet = next((p for p in pets if p.name == "yuexinmiao"), None)
     if pet is not None:
         check("精灵图 9 行 v1", pet.cell_h > 0 and len(pet.rows) == 9)
         check("idle 帧数 > 0", len(pet.frames.get("idle", [])) > 0)

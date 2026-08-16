@@ -62,7 +62,9 @@ def _run_case(tmp):
     check("初始扫描到 1 个宠物", len(pets) == 1, f"({[p.name for p in pets]})")
 
     widget = pet_app.PetWidget(pets[0], dict(pet_app.DEFAULT_CONFIG), pets)
-    pets_menu = widget._menu.actions()[0].menu()
+    # 注意：不要用 widget._menu.actions()[0].menu() 链式取宠物子菜单——
+    # 临时 QAction 包装被 GC 时会连带销毁 C++ QMenu 及其子 actions（PySide6 行为），
+    # 导致后面 setChecked 报 "already deleted"。widget 持久持有 _pets_menu。
     check("菜单宠物项 = 1", len(widget._pet_actions) == 1)
 
     # waiting 态保留气泡（turn/end → 完成展示之间不闪断）
@@ -98,22 +100,39 @@ def _run_case(tmp):
     check("完成展示结束气泡隐藏", not widget._bubble.isVisible())
     check("完成展示结束圆圈隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
 
-    # 新宠物加入
-    shutil.copytree(SRC_PETS / "yuexin", pets_root / "yuexin")
+    # 宠物菜单勾选防御：掉勾后 refresh_checks 必须恢复（与实际宠物一致）
+    current_pet = widget._pet
+    current_action = next(a for p, a in widget._pet_actions if p.name == current_pet.name)
+    current_action.setChecked(False)  # 模拟菜单点击 toggle 掉勾
+    widget.refresh_checks()  # _enforce_pet_check 调度的是 refresh_checks
+    check("点击当前宠物项勾选保持", current_action.isChecked())
+    # 未选中的项必须无勾
+    for p, a in widget._pet_actions:
+        if p.name != current_pet.name:
+            check("非当前项无勾", not a.isChecked())
+
+    # 新宠物加入（复制 yuexinmiao 并改 id，模拟另一个宠物包）
+    import json as _json
+
+    new_dir = pets_root / "yuexin-copy"
+    shutil.copytree(SRC_PETS / "yuexinmiao", new_dir)
+    meta = _json.loads((new_dir / "pet.json").read_text(encoding="utf-8"))
+    meta["id"] = "yuexin-copy"
+    (new_dir / "pet.json").write_text(_json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     widget._refresh_pets()
 
     check("刷新后 _pets = 2", len(widget._pets) == 2, f"({[p.name for p in widget._pets]})")
     check("刷新后菜单宠物项 = 2", len(widget._pet_actions) == 2)
-    check("当前宠物未丢失", widget._pet is not None and widget._pet.name == "yuexinmiao-mix")
+    check("当前宠物未丢失", widget._pet is not None and widget._pet.name == "yuexinmiao")
 
     # 删除当前宠物 → 回退到第一个
     shutil.rmtree(pets_root / "yuexinmiao", ignore_errors=True)
     widget._refresh_pets()
-    check("删除当前宠物后回退", widget._pet is not None and widget._pet.name != "yuexinmiao-mix")
+    check("删除当前宠物后回退", widget._pet is not None and widget._pet.name != "yuexinmiao")
     check("回退后菜单 = 1", len(widget._pet_actions) == 1)
 
     # 全部删除 → 无宠物
-    shutil.rmtree(pets_root / "yuexin", ignore_errors=True)
+    shutil.rmtree(new_dir, ignore_errors=True)
     widget._refresh_pets()
     check("全部删除后无宠物", len(widget._pets) == 0 and len(widget._pet_actions) == 0)
 
