@@ -105,12 +105,16 @@ def _run_listener(tmp):
     events = []
     vis_events = []
     quit_count = [0]
+    titles = []
 
     def on_state(state, detail, source):
         events.append(("state", state, detail, source))
 
     def on_action(text, status, kind):
         events.append(("action", text, status, kind))
+
+    def on_title(title):
+        titles.append(title)
 
     def on_visibility(cmd):
         vis_events.append(cmd)
@@ -120,12 +124,15 @@ def _run_listener(tmp):
 
     listener.state_changed.connect(on_state)
     listener.action_changed.connect(on_action)
+    listener.title_changed.connect(on_title)
     listener.visibility_changed.connect(on_visibility)
     listener.quit_requested.connect(on_quit)
 
     def run():
         send_udp(port, "SessionStart")
         send_udp(port, "UserPromptSubmit", "帮我移植桌宠")
+        # 会话标题主动推送（插件 SessionTitle 事件）：只更新标题，不产生状态事件
+        send_udp(port, "SessionTitle", "审查codex桌宠代码准备移植")
         send_udp(port, "PreToolUse", "调用工具 edit")
         send_udp(port, "patch_apply", "已修改 2 个文件")
         send_udp(port, "AgentStop", "等待你的输入")
@@ -172,6 +179,9 @@ def _run_listener(tmp):
     check("PermissionRequest → jumping(once:waiting)", has_state("jumping", "once:waiting", "activity"))
     check("done → waving(once:waiting,complete)", has_state("waving", "once:waiting", "complete"))
     check("未知事件被忽略", not has_state("idle", "x"))
+    # SessionTitle 只触发 title_changed，不产生状态事件（状态数仍为 8）
+    check("SessionTitle → title_changed", titles == ["审查codex桌宠代码准备移植"], f"({titles})")
+    check("SessionTitle 不产生状态事件", len(states) == 8, f"({len(states)})")
     # 精确校验：旧 Codex 报文（无 src）不产生任何状态（状态数仍为 8）
     check("旧 Codex 报文不增加状态", len(states) == 8, f"({len(states)})")
     check("action → action_changed", any(a[1] == "正在重构模块" and a[2] == "ok" and a[3] == "action" for a in actions))

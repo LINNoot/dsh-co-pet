@@ -83,15 +83,24 @@ test("会话标题：UserPromptSubmit 气泡第一行用标题（侧边栏标题
   assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "审查codex桌宠代码准备移植" });
 });
 
-test("会话标题：标题变化时更新", () => {
+test("会话标题：标题变化时更新并主动推送 SessionTitle（桌宠气泡跟新标题）", () => {
   const h = makeHarness();
   const { state, events } = h.makeState();
   state.onSessionTitle("旧标题");
   state.onSessionEvent(userMessage("第一问"));
+  assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "旧标题" });
+  // 标题就绪后：主动推 SessionTitle 事件（桌宠据此更新气泡第一行，
+  // 解决"新任务开始瞬间拿到旧标题、之后永远不刷新"的问题）
   state.onSessionTitle("新标题：优化桌宠");
+  assert.deepEqual(events.at(-1), { event: "SessionTitle", detail: "新标题：优化桌宠" });
+  assert.equal(state.snapshot().taskTitle, "新标题：优化桌宠");
+  // 标题未变化不重复推送
+  const before = events.length;
+  state.onSessionTitle("新标题：优化桌宠");
+  assert.equal(events.length, before, "相同标题不重复推 SessionTitle");
+  // 后续 user 事件仍用最新标题
   state.onSessionEvent(userMessage("第二问"));
   assert.deepEqual(events.at(-1), { event: "UserPromptSubmit", detail: "新标题：优化桌宠" });
-  assert.equal(state.snapshot().taskTitle, "新标题：优化桌宠");
 });
 
 test("工具调用与 diff → PreToolUse / patch_apply（review）", () => {

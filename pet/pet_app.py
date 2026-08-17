@@ -771,6 +771,20 @@ class PetWidget(QWidget):
         self._update_bubble()
         self._from_business = False
 
+    def set_task_title(self, title: str):
+        """会话标题更新（插件 SessionTitle 事件）：只改标题，不动其他气泡内容。
+
+        新任务开始时 UserPromptSubmit 携带的标题可能还是上一个任务的
+        （插件侧 sessionTitle 尚未刷新）；标题就绪后插件主动推送本事件，
+        保证气泡第一行黑体与实际任务一致。
+        """
+        title = (title or "").strip()[:200]
+        if title and title != self._task_text:
+            self._task_text = title
+            self._model.title = title
+            if self._show_bubble:
+                self._update_bubble()
+
     # ------------------------------------------------------------- 气泡
 
     def _update_bubble(self):
@@ -1271,6 +1285,7 @@ def main() -> int:
     if listener is not None:
         listener.state_changed.connect(widget.apply_business)
         listener.action_changed.connect(widget.set_action)
+        listener.title_changed.connect(widget.set_task_title)
         # 信号参数是 "show"/"hide" 字符串：必须转换（直接连接会把
         # "hide" 当 truthy 执行 show()，导致"关闭无效"）。
         listener.visibility_changed.connect(lambda cmd: apply_visibility_cmd(widget, cmd))

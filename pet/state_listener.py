@@ -65,6 +65,7 @@ class StateListener(QObject):
 
     state_changed = Signal(str, str, str)  # (state, detail, source)
     action_changed = Signal(str, str, str)  # (text, status, kind)
+    title_changed = Signal(str)  # 会话标题更新（插件主动推送，气泡第一行黑体）
     visibility_changed = Signal(str)  # "show" | "hide"（Web 开关按钮控制窗口显隐）
     quit_requested = Signal()  # 插件请求退出桌宠
 
@@ -160,6 +161,11 @@ class StateListener(QObject):
             self._mode = "running"
             self._last_activity = time.monotonic()
             self.state_changed.emit("running", detail, "user")
+            return
+
+        if key in ("sessiontitle", "session/title"):
+            # 会话标题更新（插件主动推送）：只更新标题，不改变动画状态
+            self.title_changed.emit(detail)
             return
 
         if key in ("patch_apply",):

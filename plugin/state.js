@@ -297,6 +297,9 @@ export class PetBridgeState {
    * 会话标题更新（index.js 轮询 sessionTitle 服务时调用）。
    * 气泡第一行黑体显示任务会话标题（侧边栏那个），如
    * "审查codex桌宠代码准备移植"；无标题时回退用户消息文本。
+   * 标题变化时主动推 `SessionTitle` 事件给桌宠——否则新任务开始时
+   * 桌宠拿到的还是上一个任务的标题（UserPromptSubmit 携带的 taskTitle
+   * 可能尚未刷新），之后标题即使正确了桌宠也不会再更新。
    * @param {string} title 归一化标题（空串表示尚无标题）
    */
   onSessionTitle(title) {
@@ -304,6 +307,7 @@ export class PetBridgeState {
     if (t && t !== this.taskTitle) {
       this.taskTitle = t;
       this._pushIn("session/title", t);
+      this.onEvent("SessionTitle", t);
     }
   }
 
