@@ -87,12 +87,12 @@ def _run_case(tmp):
 
     # waiting 态保留气泡（turn/end → 完成展示之间不闪断）
     widget._task_text = "审查codex桌宠代码准备移植"
-    widget.set_state("waiting", "等待你的输入")
+    widget.apply_business("waiting", "等待你的输入", "activity")
     check("waiting 保留气泡", widget._bubble.isVisible())
     check("waiting 气泡标题", "审查codex桌宠代码准备移植" in widget._bubble._title_label.text())
     check("waiting 气泡短语", "等待你的输入" in widget._bubble._title_label.text())
     # running 态气泡正常（回归）
-    widget.set_state("running", "任务进行中")
+    widget.apply_business("running", "任务进行中", "activity")
     check("running 显示气泡", widget._bubble.isVisible())
 
     # 中断圆圈：hover 显示灰方块、非 hover 隐藏、中断后不再显示
@@ -111,7 +111,7 @@ def _run_case(tmp):
     check("恢复后非 hover 再隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
 
     # 完成展示结束：气泡与圆圈彻底隐藏（不再有"等待你的输入"残留气泡）
-    widget.set_state("waiting", "等待你的输入")
+    widget.apply_business("waiting", "等待你的输入", "activity")
     widget._mark_completed()
     check("完成展示气泡显示", widget._bubble.isVisible())
     widget._on_completed_timeout()

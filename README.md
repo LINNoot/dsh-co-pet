@@ -134,10 +134,11 @@ cd plugin; node test/state.test.mjs; node test/visibility.test.mjs; node test/in
 # inject 测试会自动探测 DSH 的 cordis（npx 缓存），找不到时跳过；
 # 也可用环境变量显式指定：$env:DSH_CORDIS_LIB = "<cordis 入口 index.js 路径>"
 
-# 桌宠：先安装依赖（一次性），再跑 4 个无 GUI 测试
+# 桌宠：先安装依赖（一次性），再跑 5 个无 GUI 测试
 py -m pip install -r pet/requirements.txt
 py pet\test_smoke.py
 py pet\test_bubble.py
+py pet\test_bubble_model.py
 py pet\test_refresh.py
 py pet\test_style.py
 ```
@@ -159,7 +160,7 @@ dsh-co-pet/
 │  ├─ state_listener.py  # 事件监听（UDP+文件）、词汇表、日志落盘
 │  ├─ pet_loader.py   # 宠物包扫描与精灵图加载
 │  ├─ pet_style.py    # Codex 样式与 QSS
-│  ├─ test_*.py       # 冒烟 / 气泡 / 刷新 / 样式测试（无 GUI）
+│  ├─ test_*.py       # 冒烟 / 气泡 / 模型 / 刷新 / 样式测试（无 GUI）
 │  └─ pets/           # 宠物包（yuexinmiao 随仓库分发）
 ├─ scripts/           # install / uninstall / build / e2e_feed
 └─ docs/architecture.md

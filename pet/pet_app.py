@@ -77,6 +77,126 @@ BUBBLE_CIRCLE_D = 36            # 状态圆圈直径（略大，与右侧圆弧�
 BUBBLE_CIRCLE_GAP = 6           # 圆圈与文字间距
 
 
+class BubbleModel:
+    """气泡内容模型：与动画状态机解耦的纯数据。
+
+    业务事件（apply_business / set_action / 中断 / 完成）直接写模型字段，
+    _update_bubble 只做"模型 → 组件"的机械渲染。气泡文案永远等于最后
+    一条业务事件的语义，不再从 _state 动画状态派生（避免"动画状态异常
+    导致气泡文案错/残留"一类耦合 bug）。
+    """
+
+    # 状态短句（气泡第一行 · 后内容）
+    PHRASE_THINKING = "思考中"
+    PHRASE_REPLYING = "回复中"
+    PHRASE_EXECUTING = "执行任务"
+    PHRASE_ANALYZING = "分析代码"  # 原版如此（保留原版行为）
+    PHRASE_WAITING = "等待你的输入"
+    PHRASE_WAIT_AUTH = "等待授权确认"
+    PHRASE_REVIEW = "等待输入"
+    PHRASE_REVIEW_BODY = "等待审阅代码变更"
+    PHRASE_INTERRUPTED = "已中断"
+    PHRASE_ERROR = "发生错误"
+    PHRASE_DONE = "任务完成"
+
+    # 动作行 → 短句映射（原版语义精确还原）
+    ACTION_TO_PHRASE = {
+        "正在思考": PHRASE_THINKING,
+        "搜索中": PHRASE_ANALYZING,
+        "收到指令": PHRASE_EXECUTING,
+        "分析代码": PHRASE_EXECUTING,
+        "执行任务": PHRASE_EXECUTING,
+        "回复中": PHRASE_REPLYING,
+    }
+
+    def __init__(self):
+        self.title = ""        # 会话标题（仅 user 事件更新）
+        self.phrase = ""       # 状态短句（思考中/已中断/等待授权…）
+        self.body = ""         # 第二行：AI 总结 / 动作行 / 错误描述
+        self.status = "ok"     # ok/warn/error（决定短语与第二行颜色）
+        self.body_color = None  # None=跟随状态色；灰=摘要（Bubble.COLOR_BODY_GRAY）
+        self.visible = False   # 气泡是否显示
+        self.completed = False  # 完成展示（对勾圆圈 + 完成气泡，10s）
+
+    # ------------------------------------------------------------------ 事件写入
+
+    def set_user_prompt(self, title: str):
+        """用户新指令：新一轮任务开始（复位中断/完成，标题更新）。"""
+        self.title = title
+        self.phrase = self.PHRASE_EXECUTING
+        self.body = ""
+        self.body_color = None
+        self.completed = False
+        self.visible = True
+
+    def set_activity(self, action_text: str, status: str = "ok"):
+        """活动事件（agent_message 等）：按动作行更新短句与第二行。"""
+        self.phrase = self.ACTION_TO_PHRASE.get(action_text, self.PHRASE_REPLYING)
+        self.status = status if status in ("ok", "warn", "error") else "ok"
+        if action_text and action_text != " " and action_text != "收到指令":
+            self.body = action_text
+            self.body_color = None
+        self.visible = True
+
+    def set_waiting(self, title_fallback: str, body: str = "", summary: str = ""):
+        """回合结束等待输入：保留标题 + '等待你的输入'，第二行取 AI 总结优先。"""
+        self.title = self.title or title_fallback
+        self.phrase = self.PHRASE_WAITING
+        self.body = summary or (body if body and body != " " else "")
+        self.status = "ok"
+        self.body_color = Bubble.COLOR_BODY_GRAY if self.body else None
+        self.visible = True
+
+    def set_review(self):
+        """产出代码变更：循环等待审阅。"""
+        self.phrase = self.PHRASE_REVIEW
+        self.body = self.PHRASE_REVIEW_BODY
+        self.status = "ok"
+        self.body_color = None
+        self.visible = True
+
+    def set_authorization(self, tool_name: str = "工具"):
+        """请求授权：等待授权确认（黄）。"""
+        self.phrase = self.PHRASE_WAIT_AUTH
+        self.body = f"等待授权：{tool_name}"
+        self.status = "warn"
+        self.body_color = None
+        self.visible = True
+
+    def set_interrupted(self):
+        """用户点击中断圆圈：短句"已中断"。"""
+        self.phrase = self.PHRASE_INTERRUPTED
+        self.status = "ok"
+        self.visible = True
+
+    def set_error(self, message: str):
+        """任务失败：'发生错误' + 错误描述（红）。"""
+        self.phrase = self.PHRASE_ERROR
+        self.body = message or self.PHRASE_ERROR
+        self.status = "error"
+        self.body_color = None
+        self.visible = True
+
+    def set_summary(self, text: str):
+        """AI 总结（第二行，锁定显示，灰）。"""
+        self.body = text
+        self.body_color = Bubble.COLOR_BODY_GRAY
+
+    def set_done(self, summary: str = ""):
+        """完成展示：'任务完成' + AI 总结（灰），对勾圆圈。"""
+        self.completed = True
+        self.phrase = self.PHRASE_DONE
+        self.status = "ok"
+        self.body = summary
+        self.body_color = Bubble.COLOR_BODY_GRAY
+        self.visible = True
+
+    def clear_completed(self):
+        """完成展示结束：彻底隐藏气泡与圆圈。"""
+        self.completed = False
+        self.visible = False
+
+
 class StatusCircle(QLabel):
     """气泡右侧的状态圆圈：完成绿勾 / 失败红叹号 / 中断灰方块。
 
@@ -470,6 +590,7 @@ class PetWidget(QWidget):
         self._hover_cooldown_until = 0.0
 
         self._bubble = Bubble()
+        self._model = BubbleModel()  # 气泡内容模型（与动画状态机解耦）
         self._circle = self._bubble.circle
         self._circle.clicked.connect(self._on_circle_clicked)
         self._bubble.hoverChanged.connect(self._on_bubble_hover)
@@ -604,10 +725,10 @@ class PetWidget(QWidget):
                 self._business_state = state
 
     def apply_business(self, state, detail="", source="activity"):
-        """业务状态入口（来自状态监听器）：更新任务文本并切换状态。
+        """业务状态入口（来自状态监听器）：更新气泡模型并切换动画状态。
 
-        DSH 版：插件是唯一事件源，任何新业务事件都取消“完成”展示
-        （目标自动续跑、新轮次等都不会卡在完成态）。
+        气泡内容由 BubbleModel 承载（文案 = 最后一条业务事件的语义），
+        动画状态机只负责播帧——两者解耦，互不污染。
         """
         if state == "waving" and detail == "once:waiting":
             self._mark_completed()
@@ -619,15 +740,31 @@ class PetWidget(QWidget):
             self._once_next = None
             self._pending_business = None
 
-        # 气泡第一行黑体 = 任务会话标题（插件在 UserPromptSubmit 时携带，
-        # source=="user"）；只在用户新指令时更新，防止 AgentStop 等事件
-        # 的 detail（"等待你的输入"等）把标题覆盖掉。
-        if source == "user" and detail and not detail.startswith("once:"):
-            self._task_text = detail[:200]
-        # 用户新指令 = 新一轮任务开始：复位"已中断"标记，
-        # 否则中断圆圈点击后气泡短语会一直卡在"已中断"。
+        # 用户新指令：新一轮任务开始——更新标题、复位中断/完成标记
         if source == "user":
             self._interrupted = False
+            title = detail[:200] if detail and not detail.startswith("once:") else ""
+            self._model.set_user_prompt(title)
+            if title:
+                self._task_text = title
+
+        # 按业务事件语义写气泡模型（与动画状态机解耦）
+        elif state == "failed":
+            self._model.set_error(detail or "发生错误")
+        elif state == "running":
+            if self._interrupted:
+                self._model.set_interrupted()
+            elif self._action_text and self._action_text != " ":
+                self._model.set_activity(self._action_text, self._action_status)
+            else:
+                # 无动作行时的兜底：保持当前短语（如授权通过后的"继续执行"）
+                self._model.visible = True
+        elif state == "review":
+            self._model.set_review()
+        elif state == "waiting":
+            self._model.set_waiting(self._task_text, self._action_text, self._ai_summary_text)
+        elif state == "jumping" and self._from_business:
+            self._model.set_authorization(self._action_text or "工具")
 
         self._from_business = True
         self.set_state(state, detail)
@@ -637,7 +774,11 @@ class PetWidget(QWidget):
     # ------------------------------------------------------------- 气泡
 
     def _update_bubble(self):
-        """按状态与来源决定气泡显隐与内容（标题 + 状态短句 + 摘要/错误）。"""
+        """纯渲染：把 BubbleModel 的内容机械地画到 Bubble 组件上。
+
+        文案/短语/颜色/显隐都来自模型（业务事件写入），不再从动画
+        状态 _state 派生——动画状态机与气泡内容完全解耦。
+        """
         self._refresh_circle_business()
         if not self._show_bubble:
             self._bubble.hide()
@@ -647,66 +788,15 @@ class PetWidget(QWidget):
             self._bubble.hide()
             return
 
-        if self._completed:
-            # 原版：标题（回退"任务完成"）+ 短语"任务完成" + AI 总结（灰）
-            title = self._task_text or "任务完成"
-            phrase = "任务完成"
-            status = "ok"
-            body = self._ai_summary_text
-            body_color = Bubble.COLOR_BODY_GRAY
-            self._bubble.set_content(title, phrase, body, status, body_color=body_color)
-            self._bubble.show()
-            self._sync_bubble_pos()
-            return
-
-        title, phrase, body, status, body_color = "", "", "", "ok", None
-
-        if self._state == "failed":
-            # 原版：标题（回退"出错"）+ 短语"发生错误" + 错误描述（红）
-            title = self._task_text or "出错"
-            phrase = "发生错误"
-            body = self._action_text or "发生错误"
-            status = "error"
-        elif self._state == "running":
-            title = self._task_text or "正在执行任务"
-            phrase = "已中断" if self._interrupted else self._status_title()
-            status = self._action_status
-            if self._has_ai_summary:
-                body = self._ai_summary_text
-            elif self._action_text and self._action_text != " ":
-                body = self._action_text
-            else:
-                body = ""
-            if body:
-                body_color = Bubble.COLOR_BODY_GRAY
-        elif self._state == "review":
-            # 原版：第一行"等待输入"，第二行"等待审阅代码变更"
-            title = self._task_text or "等待审阅代码变更"
-            phrase = "等待输入"
-            body = "等待审阅代码变更"
-        elif self._state == "waiting":
-            # 回合结束等待输入：保留气泡（标题 + "等待你的输入"），
-            # 避免任务完成后气泡闪断（turn/end → 完成展示之间不空白）。
-            title = self._task_text or "正在执行任务"
-            phrase = "等待你的输入"
-            body = self._ai_summary_text or (self._action_text if self._action_text != " " else "")
-            status = "ok"
-            if body:
-                body_color = Bubble.COLOR_BODY_GRAY
-        elif self._state == "jumping" and self._from_business:
-            # 原版：第一行"需要你的授权/等待授权确认"，第二行授权提示（黄）
-            title = self._task_text or "需要你的授权"
-            phrase = "等待授权确认"
-            body = self._action_text or "等待授权确认"
-            status = "warn"
-        else:
+        m = self._model
+        if not m.visible:
             self._bubble.hide()
             return
-
-        if title or phrase or body:
-            self._bubble.set_content(title, phrase, body, status, body_color=body_color)
-            self._bubble.show()
-            self._sync_bubble_pos()
+        # 完成展示：标题（回退"任务完成"）+ 短语"任务完成" + AI 总结（灰）
+        title = m.title or ("任务完成" if m.completed else "正在执行任务")
+        self._bubble.set_content(title, m.phrase, m.body, m.status, body_color=m.body_color)
+        self._bubble.show()
+        self._sync_bubble_pos()
 
     def set_action(self, text=" ", status="ok", kind="action"):
         """更新气泡第二行（来自状态监听器）。
@@ -725,28 +815,28 @@ class PetWidget(QWidget):
             if text:
                 self._has_ai_summary = True
                 self._ai_summary_text = text
+                self._model.set_summary(text)
         else:  # action 行
             if text == " " or text == "收到指令":
                 # 新指令：重置 AI 总结锁定
                 self._has_ai_summary = False
                 self._ai_summary_text = ""
+                self._model.body = ""
+                self._model.body_color = None
+            elif self._model.visible and not self._model.completed:
+                # 普通动作行：刷新短语与第二行（不打断完成展示）
+                self._model.set_activity(text, self._action_status)
         if self._show_bubble:
             self._update_bubble()
 
     def _status_title(self) -> str:
-        """running 状态的第一行状态短句（· 后内容）。原版语义精确还原。"""
-        action = self._action_text
-        if action == "正在思考":
-            return "思考中"
-        if action == "搜索中":
-            return "分析代码"  # 原版如此（保留原版行为）
-        if action in self.KNOWN_ACTION_WORDS:
-            return "执行任务"
-        return "回复中"
+        """running 状态的短语映射（BubbleModel.ACTION_TO_PHRASE 的兼容入口）。"""
+        return BubbleModel.ACTION_TO_PHRASE.get(self._action_text, BubbleModel.PHRASE_REPLYING)
 
     def _mark_completed(self):
         _log("完成展示触发（对勾圆圈 + 完成气泡，10 秒）")
         self._completed = True
+        self._model.set_done(self._ai_summary_text)
         self._completed_timer.start(10000)
         self._waiting_timer.start(20000)
         self._update_bubble()
@@ -755,6 +845,7 @@ class PetWidget(QWidget):
         self._completed = False
         # 完成展示结束：彻底隐藏气泡与圆圈——此后不应再有任何气泡
         # （waving 动画已跳回 waiting 态，若不隐藏会弹出"等待你的输入"残留）
+        self._model.clear_completed()
         self._bubble.hide()
         self._circle.set_mode(StatusCircle.MODE_HIDDEN)
 
@@ -769,6 +860,7 @@ class PetWidget(QWidget):
         # 任务进行中点击中断圆圈：写命令文件，插件轮询执行（中断当前回合）
         if self._circle.mode() == StatusCircle.MODE_INTERRUPT:
             self._interrupted = True
+            self._model.set_interrupted()
             _write_command({"cmd": "interrupt", "ts": time.time()})
             _log("请求中断任务")
         self._update_bubble()
@@ -780,6 +872,7 @@ class PetWidget(QWidget):
     def _close_completed(self):
         self._completed = False
         self._completed_timer.stop()
+        self._model.clear_completed()
         if self._once_next is not None:
             self._once_next = None
             self._pending_business = None
