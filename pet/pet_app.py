@@ -624,6 +624,10 @@ class PetWidget(QWidget):
         # 的 detail（"等待你的输入"等）把标题覆盖掉。
         if source == "user" and detail and not detail.startswith("once:"):
             self._task_text = detail[:200]
+        # 用户新指令 = 新一轮任务开始：复位"已中断"标记，
+        # 否则中断圆圈点击后气泡短语会一直卡在"已中断"。
+        if source == "user":
+            self._interrupted = False
 
         self._from_business = True
         self.set_state(state, detail)

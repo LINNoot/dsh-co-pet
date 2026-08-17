@@ -118,6 +118,16 @@ def _run_case(tmp):
     check("完成展示结束气泡隐藏", not widget._bubble.isVisible())
     check("完成展示结束圆圈隐藏", widget._circle.mode() == pet_app.StatusCircle.MODE_HIDDEN)
 
+    # 中断标记复位：点击中断圆圈后气泡短语"已中断"，用户再发新指令
+    # （source=user）必须复位——否则下次任务气泡一直卡"已中断"。
+    widget._interrupted = True
+    widget.apply_business("running", "继续执行", "activity")
+    check("中断后短语显示已中断", "已中断" in widget._bubble._title_label.text())
+    widget.apply_business("running", "开始新任务", "user")
+    check("新指令复位中断标记", not widget._interrupted)
+    check("新指令后短语恢复", "已中断" not in widget._bubble._title_label.text())
+    check("新指令更新任务标题", "开始新任务" in widget._bubble._title_label.text())
+
     # 宠物菜单勾选防御：掉勾后 refresh_checks 必须恢复（与实际宠物一致）
     current_pet = widget._pet
     current_action = next(a for p, a in widget._pet_actions if p.name == current_pet.name)
