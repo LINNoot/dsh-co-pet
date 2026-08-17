@@ -161,7 +161,7 @@ dsh-co-pet/
 │  ├─ pet_loader.py   # 宠物包扫描与精灵图加载
 │  ├─ pet_style.py    # Codex 样式与 QSS
 │  ├─ test_*.py       # 冒烟 / 气泡 / 模型 / 刷新 / 样式测试（无 GUI）
-│  └─ pets/           # 宠物包（yuexinmiao 随仓库分发）
+│  └─ pets/           # 宠物包（yuexinmiao / deepseek 随仓库分发）
 ├─ scripts/           # install / uninstall / build / e2e_feed
 └─ docs/architecture.md
 ```
