@@ -98,7 +98,7 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 沿用 Codex 桌宠契约。
 **`pet/pets/yuexinmiao/`（月薪喵）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区
 **`pet/pets/deepseek/`（ds）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/dpsk-girl/) 开源社区
-仅做演示使用，clone 即开箱可用。
+**仅做演示使用，clone 即开箱可用。
 
 自定义宠物：
 
