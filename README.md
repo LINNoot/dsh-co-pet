@@ -28,7 +28,7 @@
 | DeepSeek Harness（`dsh web`） | 已在运行即可；插件面向 v0.1.0-rc.6 系列 |
 | Windows 10/11 | 桌宠窗口与脚本均为 Windows 优先 |
 | Python 3.11+（可选） | 仅自动构建 `DshPet.exe` 需要；也可使用 GitHub Release 的预构建 exe（`install.ps1 -PetExe <路径>`） |
-| 宠物包素材 | 自带 `yuexinmiao`（月薪喵），可自定义（见下文"宠物包"）；其余素材需自备 |
+| 宠物包素材 | 自带 `yuexinmiao`（月薪喵）`deepseek`（鲸鱼娘）（均出自开源社区），可自定义（见下文"宠物包"）；其余素材需自备 |
 
 ### 方式一：一键安装脚本（Windows，无需 Python）
 
@@ -95,7 +95,10 @@ powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -RemovePlugin -Re
 
 ## 🐱 宠物包
 
-沿用 Codex 桌宠契约。**`pet/pets/yuexinmiao/`（月薪喵）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区，仅做演示使用，clone 即开箱可用。
+沿用 Codex 桌宠契约。
+**`pet/pets/yuexinmiao/`（月薪喵）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/yuexinmiao/) 开源社区
+**`pet/pets/deepseek/`（ds）已随仓库分发**——来自 [codex-pet.org](https://codex-pet.org/zh/pets/dpsk-girl/) 开源社区
+仅做演示使用，clone 即开箱可用。
 
 自定义宠物：
 
