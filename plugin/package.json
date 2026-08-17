@@ -1,6 +1,6 @@
 {
   "name": "dsh-pet-bridge",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "description": "DeepSeek Harness 桌宠桥接插件：订阅 DSH 生命周期事件（session/event、agent/status、agents 轮询、goal/change），驱动 Codex 风格桌宠动画（UDP + 状态文件双通道）；Web GUI 侧边栏自带桌宠电源开关。",
   "type": "module",
   "main": "index.js",
