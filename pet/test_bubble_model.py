@@ -86,7 +86,7 @@ def main():
     m.clear_completed()
     check("完成结束复位", not m.completed and not m.visible)
 
-    # ---- 与旧 _status_title 映射一致（兼容入口）----
+    # ---- 动作行 → 短语映射（原版语义）----
     mapping = {
         "正在思考": "思考中",
         "搜索中": "分析代码",

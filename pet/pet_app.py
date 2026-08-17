@@ -559,8 +559,6 @@ class PetWidget(QWidget):
 
     pet_changed = Signal()
 
-    KNOWN_ACTION_WORDS = ("收到指令", "正在思考", "搜索中", "分析代码", "执行任务", "回复中")
-
     def __init__(self, pet: Pet | None, config: dict, pets: list[Pet], parent=None):
         super().__init__(parent)
         self._config = config
@@ -842,10 +840,6 @@ class PetWidget(QWidget):
                 self._model.set_activity(text, self._action_status)
         if self._show_bubble:
             self._update_bubble()
-
-    def _status_title(self) -> str:
-        """running 状态的短语映射（BubbleModel.ACTION_TO_PHRASE 的兼容入口）。"""
-        return BubbleModel.ACTION_TO_PHRASE.get(self._action_text, BubbleModel.PHRASE_REPLYING)
 
     def _mark_completed(self):
         _log("完成展示触发（对勾圆圈 + 完成气泡，10 秒）")
